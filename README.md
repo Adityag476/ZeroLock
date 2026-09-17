@@ -146,6 +146,28 @@ The application features an **Apple Enterprise Light** design system tailored fo
 - **Forensic Inspection Reticle:** High-contrast `#1d1d1f` dark inspection well for uploaded phone photos, optimizing visual clarity under stage projectors.
 - **Zero Raw Emojis:** Replaced all informal emojis with monochrome outline vectors (stroke-width: 1.8).
 
+### Institutional Dashboard Showcase
+
+#### 1. Centre Custodian & On-Chain Consensus Gateway (`/centre`)
+*Enforces EVM time-lock denial, handles 1-click clock warp verification, and renders JIT watermarked PDFs.*
+![Centre Custodian Portal](docs/assets/centre_portal.png)
+
+#### 2. Forensic Physical Watermark Scanner (`/forensic`)
+*Optical homography detection, adaptive bimodal thresholding, and instantaneous provenance tracing from smartphone photos.*
+![Forensic Watermark Scanner](docs/assets/forensic_scanner.png)
+
+#### 3. Semantic Honey-Token Plaintext Inspector (`/forensic`)
+*NLP numerical parameter extraction and cross-centre distractor correlation for social media text leaks.*
+![Honey-Token Plaintext Inspector](docs/assets/honeytoken_inspector.png)
+
+#### 4. Master Exam Paper Depositor (`/setter`)
+*Shamir 3-of-5 threshold encryption, IPFS CID hashing, and on-chain time-lock commitment.*
+![Setter Deposit Portal](docs/assets/setter_portal.png)
+
+#### 5. Cryptographic Audit Ledger (`/audit`)
+*Immutable SHA-256 hash-chained event chronology recording all custody transitions and forensic queries.*
+![Chained Audit Ledger](docs/assets/audit_ledger.png)
+
 ---
 
 ## 90-Second Stage Demo Script
