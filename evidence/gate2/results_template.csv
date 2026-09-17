@@ -1,0 +1,7 @@
+Print,Capture,Angle,Lighting,Paper,Anchors,Symbols,ECC,Status,Attributed,Confidence
+P1,Flat_Scan,0deg,Ambient_Daylight,75gsm_Standard,4/4,20/20,0_errors,VERIFIED,Centre 14,100%
+P1,Angled_Tilt,15deg,Ambient_Daylight,75gsm_Standard,4/4,20/20,0_errors,VERIFIED,Centre 14,100%
+P1,High_Tilt,25deg,Ambient_Daylight,75gsm_Standard,,,,,,
+P1,Hard_Shadow,15deg,Desk_Lamp_Glare,75gsm_Standard,,,,,,
+P2,Folded_Sheet,20deg,Hall_Fluorescent,75gsm_Standard,,,,,,
+P2,Cheap_Inkjet,15deg,Feathered_Ink,70gsm_Rough,,,,,,

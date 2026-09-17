@@ -1,0 +1,40 @@
+# ZeroLeak
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+zeroleak.db
+*.db-journal
+*.db-wal
+*.db-shm
+uploads/
+
+# Frontend
+node_modules/
+artifacts/
+cache/
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Contracts
+contracts/node_modules/
+contracts/artifacts/
+contracts/cache/
+contracts/.env
+
+# Demo
+demo/leaked_photos/*.jpg
+demo/leaked_photos/*.png
+
+# Experiments
+experiments/debug/
+experiments/test_paper.pdf
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
+node_modules

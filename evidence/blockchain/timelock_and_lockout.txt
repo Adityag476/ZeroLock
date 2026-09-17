@@ -1,0 +1,10 @@
+﻿
+
+  PaperVault Anti-Grinding Lockout
+    ΓêÜ should track failed attempts and lock out after 5 invalid guesses
+    ΓêÜ should unlock successfully with correct OTP on first attempt and reset failed counter
+    ΓêÜ should support 12-character alphanumeric high-entropy token secrets
+
+
+  3 passing (352ms)
+
