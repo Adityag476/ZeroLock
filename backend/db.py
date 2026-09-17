@@ -81,5 +81,13 @@ def init_db() -> None:
             event_hash    TEXT NOT NULL
         );
     """)
+
+    # Safe schema migration for print_instances
+    existing_cols = [c[1] for c in conn.execute("PRAGMA table_info(print_instances)").fetchall()]
+    if "timestamp_epoch" not in existing_cols:
+        conn.execute("ALTER TABLE print_instances ADD COLUMN timestamp_epoch INTEGER DEFAULT 0")
+    if "on_chain_tx" not in existing_cols:
+        conn.execute("ALTER TABLE print_instances ADD COLUMN on_chain_tx TEXT")
+
     conn.commit()
     conn.close()

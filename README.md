@@ -127,7 +127,7 @@ High-stakes examination leaks in developing nations rarely occur via cryptograph
 | Hostile Attack Vector | Evaluator Challenge | Pre-Engineered Institutional Defense |
 |---|---|---|
 | **Thumb on Anchor** | *"What happens if the leaker's thumb covers a corner crosshair?"* | *"If 4 marks are detected, full projective homography ($H$) runs. If one is occluded, the system reconstructs the missing point from detected page geometry and A4 aspect ratio using affine parallelogram vector estimation: $P_4 = P_1 + (P_3 - P_2)$ under cyclic vertex ordering. When margins are unavailable, the system falls back to text-line Hough baselines and circular 48-bit whitened repetition."* |
-| **Simultaneous Unlocks** | *"Can 500 exam centres unlock at 09:00 AM without network congestion?"* | *"Executing `unlockPaper()` consumes **83,811 gas units**. The blockchain transaction validates a compact authorization state; heavy PDF rendering and forensic processing remain completely decentralized and off-chain on local centre hardware."* |
+| **Simultaneous Unlocks** | *"Can 500 exam centres unlock at 09:00 AM without network congestion?"* | *"Unlock validation consumes **83,811 gas units** on-chain; all heavy PDF rendering and watermark embedding is fully decentralized and off-chain on local centre hardware."* |
 | **Why `return 0` on wrong OTP?** | *"Why doesn't the contract revert immediately on bad credentials?"* | *"An EVM revert rolls back all state modifications—including failed attempt counters. Returning 0 is an intentional architectural choice so the `failedAttempts` counter persists on-chain, triggering permanent lockout on the 5th attempt."* |
 | **Offline Grinding of Numeric OTP** | *"If `unlockPaper` takes a uint64 OTP, can't someone grind the commitment hash offline?"* | *"In production, ZeroLock deploys `unlockPaperSecret` using 12-character alphanumeric tokens ($62^{12} \approx 3.2 \times 10^{21}$ states), rendering offline pre-computation mathematically impossible. The numeric `unlockPaper` function is an administrative/terminal fallback requiring full 64-bit entropy generation."* |
 | **Two-Centre Collusion** | *"What stops a bad actor from colluding across two centers to average out the spaces?"* | *"Each watermark payload is bound to one print instance. Averaging two watermarked copies does not produce a third valid identity—it destroys both. The Reed-Solomon decoder returns syndrome/parity errors and `UNKNOWN` rather than a false attribution, so physical mixing is detectable, not exploitable."* |
@@ -165,8 +165,8 @@ The application features an **Apple Enterprise Light** design system tailored fo
 - **0:55–1:15 (Social Media Retyping Defense)**:  
   - Switch to the *Honey-Token Plaintext Inspector* tab.  
   - Paste an unformatted Telegram chat snippet. The NLP engine correlates the numbers and flags Centre #14 with a **+58.7% separation margin**, highlighting the synchronized answer key.
-- **1:15–1:30 (The Close)**:  
-  > *"Impossible before the exam. Traceable after it. Physical provenance becomes recoverable when the forensic signal survives capture."*
+- **1:15–1:30 (The Spoken Stage Close)**:  
+  > *"Impossible before the exam. Traceable after it. Deniability: eliminated."*
 
 ---
 
@@ -243,7 +243,10 @@ ZeroLock/
 
 When printing physical test sheets for live evaluation:
 1. **Actual Size (100% Scale):** Disable "Fit to Printable Area" in the printer dialogue. Scaling introduces non-uniform baseline jitter prior to homography.
-2. **Camera Exposure Lock (AE/AF Lock):** Long-press on the printed paper on the phone screen to lock exposure and focus before snapping. This avoids blown-out whites under overhead fluorescent stage lighting.
-3. **Dual Physical Paper Prep:** Keep Copy A pristine and flat in a folder; keep Copy B lightly folded once across the middle. Decoding both proves resilience against real-world mechanical distortion.
-4. **Air-Gap / Total Disconnect Validation:** The entire system (Hardhat local node, FastAPI backend, Vite React frontend, OpenCV decoder) runs completely offline without internet connectivity.
+2. **Ruler Check:** Measure a known dimension on the printed sheet (e.g. margin or text-block width) against the PDF specification to confirm true 100% scale within $\pm 1\%$.
+3. **Camera Exposure Lock (AE/AF Lock):** Long-press on the printed paper on the phone screen to lock exposure and focus before snapping. This avoids blown-out whites under overhead fluorescent stage lighting.
+4. **Direct Cable Transfer (No Messaging Apps):** Transfer photos to the evaluation laptop via USB cable or local air-drop. Never transmit via WhatsApp or messaging apps, which strip original EXIF timestamps and apply aggressive lossy Q50 compression.
+5. **Register Capture Device:** Record phone model, resolution, and camera app in the test report (`evidence/gate2/results_template.csv`) to establish reproducible testing conditions.
+6. **Dual Physical Paper Prep:** Keep Copy A pristine and flat in a folder; keep Copy B lightly folded once across the middle. Decoding both proves resilience against real-world mechanical distortion.
+7. **Air-Gap / Total Disconnect Validation:** The entire system (Hardhat local node, FastAPI backend, Vite React frontend, OpenCV decoder) runs completely offline without internet connectivity.
 
