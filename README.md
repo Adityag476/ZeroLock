@@ -109,13 +109,13 @@ High-stakes examination leaks in developing nations rarely occur via cryptograph
 | **G: False Positive** | Unwatermarked document | **PASS** | `status=UNKNOWN`, zero false attributions |
 
 ### Dual-Provenance Attribution Experiment (`experiments/dual_provenance.py`)
-*Proving that two visually identical copies of the same exam paper are deterministically separated:*
+*Proving that two visually identical copies of the same exam paper are deterministically separated under simulated capture:*
 
 | Metric | Copy A (Centre 14) | Copy B (Centre 28) | Provenance Guarantee |
 |---|---|---|---|
 | **Document Content** | National Physics Exam | National Physics Exam | Identical text & formatting |
-| **Optical Channel** | JPEG Q70 Compression | JPEG Q70 Compression | Simulated smartphone capture |
-| **Recovered Centre** | **Centre #14** | **Centre #28** | **Deterministic Separation** |
+| **Optical Channel** | JPEG Q70 Simulation | JPEG Q70 Simulation | Simulated smartphone capture |
+| **Recovered Centre** | **Centre #14** | **Centre #28** | **Zero Cross-Talk Observed** |
 | **Recovered Hall** | Hall #3 | Hall #1 | Room-level accuracy |
 | **Recovered Print** | Print #1 | Print #1 | Sequential token lineage |
 | **Cross-Talk** | None observed | None observed | Zero mutual interference |
@@ -126,13 +126,15 @@ High-stakes examination leaks in developing nations rarely occur via cryptograph
 
 | Hostile Attack Vector | Evaluator Challenge | Pre-Engineered Institutional Defense |
 |---|---|---|
-| **Thumb on Anchor** | *"What happens if the leaker's thumb covers a corner crosshair?"* | *"If 4 marks are detected, full projective homography ($H$) runs. If one is occluded, the system executes **Affine Parallelogram Reconstruction**: because A4 is rectangular, any 3 points define the 4th via vector addition: $P_4 = P_1 + (P_3 - P_2)$. For tight marginless crops, text-line Hough baselines + circular 48-bit repetition recover the payload."* |
-| **Simultaneous Unlocks** | *"Can 500 exam centres unlock at 09:00 AM without network congestion?"* | *"Executing `unlockPaper()` consumes **83,811 gas units**. On Polygon or an L2 rollup, a single block handles 15M+ gas. The blockchain validates state commitments; heavy PDF compilation and steganographic rendering occur decentralized, client-side on local centre hardware."* |
-| **Why `return 0` on wrong OTP?** | *"Why doesn't the contract revert immediately on bad credentials?"* | *"An EVM revert rolls back all state—including failed attempt counters. Returning 0 is an intentional architectural choice so the `failedAttempts` counter persists on-chain, triggering permanent lockout on the 5th attempt."* |
+| **Thumb on Anchor** | *"What happens if the leaker's thumb covers a corner crosshair?"* | *"If 4 marks are detected, full projective homography ($H$) runs. If one is occluded, the system reconstructs the missing point from detected page geometry and A4 aspect ratio using affine parallelogram vector estimation: $P_4 = P_1 + (P_3 - P_2)$ under cyclic vertex ordering. When margins are unavailable, the system falls back to text-line Hough baselines and circular 48-bit whitened repetition."* |
+| **Simultaneous Unlocks** | *"Can 500 exam centres unlock at 09:00 AM without network congestion?"* | *"Executing `unlockPaper()` consumes **83,811 gas units**. The blockchain transaction validates a compact authorization state; heavy PDF rendering and forensic processing remain completely decentralized and off-chain on local centre hardware."* |
+| **Why `return 0` on wrong OTP?** | *"Why doesn't the contract revert immediately on bad credentials?"* | *"An EVM revert rolls back all state modifications—including failed attempt counters. Returning 0 is an intentional architectural choice so the `failedAttempts` counter persists on-chain, triggering permanent lockout on the 5th attempt."* |
+| **Offline Grinding of Numeric OTP** | *"If `unlockPaper` takes a uint64 OTP, can't someone grind the commitment hash offline?"* | *"In production, ZeroLock deploys `unlockPaperSecret` using 12-character alphanumeric tokens ($62^{12} \approx 3.2 \times 10^{21}$ states), rendering offline pre-computation mathematically impossible. The numeric `unlockPaper` function is an administrative/terminal fallback requiring full 64-bit entropy generation."* |
+| **Two-Centre Collusion** | *"What stops a bad actor from colluding across two centers to average out the spaces?"* | *"Each watermark payload is bound to one print instance. Averaging two watermarked copies does not produce a third valid identity—it destroys both. The Reed-Solomon decoder returns syndrome/parity errors and `UNKNOWN` rather than a false attribution, so physical mixing is detectable, not exploitable."* |
 | **Grading Differing Numbers** | *"How do evaluators grade students when numerical questions differ?"* | *"The honey-token compiler operates under strict parametric constraints: formula complexity, algebraic steps, and difficulty ratings remain identical ($1.00$). `core/honey_token.py` automatically compiles deterministic, centre-specific answer keys for central evaluator portals."* |
-| **Paraphrased Telegram Leaks** | *"What if the leaker paraphrases text and avoids exact sentences?"* | *"Problem-copiers preserve numbers almost universally because mathematical solutions depend on them. Paraphrasing numbers renders the leaked leak useless to students. The honey-token engine isolates the culprit based on numerical distractor sets."* |
-| **False Accusations** | *"Can attribution wrongly accuse an innocent centre?"* | *"Attribution outputs a confidence score and separation margin as investigative evidence with human-in-the-loop review, never automatic punitive verdicts. Our false-positive guard test guarantees unwatermarked papers return `UNKNOWN`."* |
-| **Print Spooler Interception** | *"What if an insider captures the raw postscript file from the print server?"* | *"The postscript stream is compiled strictly in-memory. Even if intercepted, the differential word-gap modulation is already baked into the vector coordinates—the postscript stream itself carries the forensic identity."* |
+| **Paraphrased Telegram Leaks** | *"What if the leaker paraphrases text and avoids exact sentences?"* | *"The honey-token path is designed to correlate distinctive numeric variants when those values survive into a retyped leak; mathematical problem-copiers preserve numbers almost universally to retain value. Text-trap phrasings extend coverage further."* |
+| **False Accusations** | *"Can attribution wrongly accuse an innocent centre?"* | *"Attribution outputs an empirical confidence score and separation margin as investigative evidence with human-in-the-loop review, never automatic punitive verdicts. Our false-positive guard test guarantees unwatermarked papers return `UNKNOWN`."* |
+| **Print Spooler Interception** | *"What if an insider captures the raw postscript file from the print server?"* | *"The postscript stream is compiled strictly in-memory within an ephemeral runtime. Even if intercepted, the differential word-gap modulation is already baked into the vector coordinates—the postscript stream itself carries the forensic identity."* |
 
 ---
 
@@ -164,7 +166,7 @@ The application features an **Apple Enterprise Light** design system tailored fo
   - Switch to the *Honey-Token Plaintext Inspector* tab.  
   - Paste an unformatted Telegram chat snippet. The NLP engine correlates the numbers and flags Centre #14 with a **+58.7% separation margin**, highlighting the synchronized answer key.
 - **1:15–1:30 (The Close)**:  
-  > *"Impossible before the exam. Traceable after it. Deniability: eliminated."*
+  > *"Impossible before the exam. Traceable after it. Physical provenance becomes recoverable when the forensic signal survives capture."*
 
 ---
 
@@ -234,3 +236,14 @@ ZeroLock/
     └── blockchain/             # Exported Hardhat test execution logs
         └── timelock_and_lockout.txt
 ```
+
+---
+
+## Gate 2: Physical Print Calibration Protocol
+
+When printing physical test sheets for live evaluation:
+1. **Actual Size (100% Scale):** Disable "Fit to Printable Area" in the printer dialogue. Scaling introduces non-uniform baseline jitter prior to homography.
+2. **Camera Exposure Lock (AE/AF Lock):** Long-press on the printed paper on the phone screen to lock exposure and focus before snapping. This avoids blown-out whites under overhead fluorescent stage lighting.
+3. **Dual Physical Paper Prep:** Keep Copy A pristine and flat in a folder; keep Copy B lightly folded once across the middle. Decoding both proves resilience against real-world mechanical distortion.
+4. **Air-Gap / Total Disconnect Validation:** The entire system (Hardhat local node, FastAPI backend, Vite React frontend, OpenCV decoder) runs completely offline without internet connectivity.
+
