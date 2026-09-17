@@ -170,7 +170,8 @@ def main():
 
     rows = []
     for r in results:
-        status_icon = "✅ PASS" if r["passed"] else "❌ FAIL"
+        status_icon = "[PASS]" if r["passed"] else "[FAIL]"
+        md_icon = "PASS" if r["passed"] else "FAIL"
         res = r["result"]
         detail = (
             f"status={res.get('status','?')} "
@@ -180,13 +181,13 @@ def main():
             f"bits={res.get('bit_count','?')} "
             f"conf={res.get('confidence','?')}"
         )
-        rows.append((r["name"], status_icon, detail))
+        rows.append((r["name"], md_icon, detail))
         print(f"  {r['name']:<30} {status_icon}  {detail}")
 
     print()
     print(f"Passed: {passed_count}/{total}")
-    gate_pass = passed_count >= 6   # need ≥ 6/7
-    gate_icon = "🟢 GO" if gate_pass else "🔴 NO-GO"
+    gate_pass = passed_count >= 6   # need >= 6/7
+    gate_icon = "[GO]" if gate_pass else "[NO-GO]"
     print(f"Gate decision: {gate_icon}")
     print()
 
@@ -198,18 +199,17 @@ def main():
         "|------|--------|--------|\n",
     ]
     for (name, icon, detail) in rows:
-        md_lines.append(f"| {name} | {icon} | {detail} |\n")
-    md_lines.append(f"\n**Gate Decision: {gate_icon}** ({passed_count}/{total} passed)\n\n")
+        md_lines.append(f"| {name} | **{icon}** | {detail} |\n")
+    md_lines.append(f"\n**Gate Decision: {'GO' if gate_pass else 'NO-GO'}** ({passed_count}/{total} passed)\n\n")
     md_lines.append("## Notes\n")
     md_lines.append("- Tests A–F use digitally rendered images (no physical printer required)\n")
     md_lines.append("- Physical print validation must be done manually with encode.py + decode.py\n")
     md_lines.append(f"- Payload: centre={TEST_CENTRE}, hall={TEST_HALL}, print={TEST_PRINT}\n")
 
     results_path = "experiments/RESULTS.md"
-    with open(results_path, "w") as f:
+    with open(results_path, "w", encoding="utf-8") as f:
         f.writelines(md_lines)
-    print(f"RESULTS.md written → {results_path}")
-
+    print(f"RESULTS.md written -> {results_path}")
     return 0 if gate_pass else 1
 
 
