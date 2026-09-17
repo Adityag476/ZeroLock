@@ -1,0 +1,18 @@
+{
+  "name": "zeroleak-contracts",
+  "version": "1.0.0",
+  "description": "ZeroLeak smart contracts",
+  "scripts": {
+    "compile":  "hardhat compile",
+    "node":     "hardhat node",
+    "deploy":   "hardhat run scripts/deploy.js --network localhost",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
+    "test":     "hardhat test",
+    "demo-unlock": "hardhat run scripts/demo_unlock.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0",
+    "dotenv": "^16.4.5"
+  }
+}

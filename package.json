@@ -1,0 +1,21 @@
+{
+  "name": "zeroleak-custody",
+  "version": "1.0.0",
+  "description": "ZeroLock On-Chain Examination Custody System",
+  "main": "index.js",
+  "scripts": {
+    "test:contract": "hardhat run scripts/demo_timelock.cjs --config hardhat.config.cjs"
+  },
+  "keywords": [
+    "blockchain",
+    "steganography",
+    "forensics"
+  ],
+  "author": "ZeroLock Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.29.1"
+  },
+  "type": "module"
+}
