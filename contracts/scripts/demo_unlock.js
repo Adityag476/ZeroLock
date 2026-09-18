@@ -18,7 +18,7 @@ async function main() {
 
   // Load deployed address
   const deployment = JSON.parse(fs.readFileSync("../backend/contract_address.json", "utf8"));
-  const artifact   = require("../artifacts/contracts/ExamVault.sol/ExamVault.json");
+  const artifact   = require("../../artifacts/contracts/ExamVault.sol/ExamVault.json");
   const vault      = new ethers.Contract(deployment.address, artifact.abi, admin);
 
   console.log("ExamVault at:", deployment.address);
