@@ -100,10 +100,10 @@ def main():
 | **Decoding Status** | `{res_A.get('status')}` | `{res_B.get('status')}` | Zero Cross-Contamination |
 | **Confidence** | {res_A.get('confidence') * 100}% | {res_B.get('confidence') * 100}% | Full Reed-Solomon Parity Pass |
 
-### Technical Takeaway for Judges
-Even when question wording, formatting, and page dimensions are completely identical, the sub-perceptual ±3pt inter-word space modulation embeds a unique, collision-free cryptographic watermark that attributes each copy to its specific printing terminal.
+### Technical Summary & Architectural Conclusion
+Even when question wording, formatting, and page dimensions are completely identical, the sub-perceptual +/- 3pt inter-word space modulation embeds a unique, collision-free cryptographic watermark that attributes each copy to its specific printing terminal.
 """
-    with open("evidence/gate1/dual_provenance_report.md", "w") as f:
+    with open("evidence/gate1/dual_provenance_report.md", "w", encoding="utf-8") as f:
         f.write(report)
 
     print("\n" + "=" * 70)

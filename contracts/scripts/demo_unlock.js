@@ -1,9 +1,9 @@
 /**
- * ZeroLeak Demo Script — Time-lock unlock flow
- * =============================================
- * Demonstrates:
+ * ZeroLock Time-Lock Verification Script
+ * ======================================
+ * Tests:
  *   1. Register a paper with unlock time = now + 60 seconds
- *   2. Attempt early unlock → REVERT (demo moment #1)
+ *   2. Attempt early unlock → EVM Revert (TimeLockActive)
  *   3. hardhat_increaseTime → advance past unlock time
  *   4. Unlock → success + PaperUnlocked event
  *

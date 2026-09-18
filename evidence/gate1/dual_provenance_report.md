@@ -1,6 +1,6 @@
 # Dual-Provenance Physical Isolation Benchmark
 
-**Execution Timestamp:** 2026-09-18 00:32:43  
+**Execution Timestamp:** 2026-09-18 06:42:28  
 **Core Proof:** Two visually identical exam papers generated from the same master question set are deterministically separated and attributed to their independent custody lineages.
 
 ## Provenance Separation Results
@@ -16,5 +16,5 @@
 | **Decoding Status** | `VERIFIED` | `VERIFIED` | Zero Cross-Contamination |
 | **Confidence** | 100.0% | 100.0% | Full Reed-Solomon Parity Pass |
 
-### Technical Takeaway for Judges
-Even when question wording, formatting, and page dimensions are completely identical, the sub-perceptual ±3pt inter-word space modulation embeds a unique, collision-free cryptographic watermark that attributes each copy to its specific printing terminal.
+### Technical Summary & Architectural Conclusion
+Even when question wording, formatting, and page dimensions are completely identical, the sub-perceptual +/- 3pt inter-word space modulation embeds a unique, collision-free cryptographic watermark that attributes each copy to its specific printing terminal.

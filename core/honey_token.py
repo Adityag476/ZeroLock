@@ -169,8 +169,8 @@ def investigate_plaintext_leak(
 def generate_centre_answer_key(centre_id: int, paper_id: str = "EXAM-2026-MAIN") -> dict:
     """
     Dynamically renders matching, centre-specific grading answer keys.
-    Solves Hostile Judge Trap 3: All perturbed variables are bound by parametric constraints
-    so problem difficulty and solution formulas remain identical across every exam centre.
+    All perturbed variables are bound by parametric constraints so problem
+    difficulty and solution formulas remain identical across every exam centre.
     """
     import math
     questions = compile_center_paper(centre_id, paper_id)
