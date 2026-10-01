@@ -105,6 +105,23 @@ export default function BatchGenerate() {
               <option key={ex.id} value={ex.id}>{ex.name} ({ex.id.slice(0, 8)}…)</option>
             ))}
           </select>
+          {(() => {
+            const exObj = exams.find(e => e.id === selectedExam)
+            if (!exObj) return null
+            return (
+              <div style={{ marginTop: 10, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span className="badge badge-accent" style={{ fontSize: 11 }}>{exObj.question_count ?? (exObj.questions_json ? JSON.parse(exObj.questions_json).length : 0)} Questions Parsed</span>
+                  {exObj.engine && <span className="badge badge-neutral" style={{ fontSize: 11 }}>Engine: {exObj.engine}</span>}
+                </div>
+                {exObj.preview && (
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap', maxHeight: 80, overflowY: 'auto' }}>
+                    {exObj.preview}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         <div className="form-group" style={{ marginBottom: 18 }}>

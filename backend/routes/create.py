@@ -12,6 +12,8 @@ from typing import Optional
 
 from backend.db import get_conn
 from backend.ipfs_client import pin_bytes
+import json
+from backend.paper_parse import parse_upload, ParseError, CapacityError
 from core.crypto import encrypt_pdf, split_key
 from core.audit import append_event, init_db
 
@@ -19,11 +21,14 @@ router = APIRouter()
 
 
 class ExamCreateResponse(BaseModel):
-    exam_id:      str
-    sha256_plain: str
-    ipfs_cid:     str
-    status:       str
-    audit_hash:   str
+    exam_id:        str
+    sha256_plain:   str
+    ipfs_cid:       str
+    status:         str
+    audit_hash:     str
+    question_count: int
+    preview:        str
+    engine:         str
 
 
 @router.post("/", response_model=ExamCreateResponse)
@@ -33,16 +38,35 @@ async def create_exam(
     release_time: float = Form(...),   # Unix epoch seconds
 ):
     """
-    Upload a PDF exam paper.
+    Upload a PDF/DOCX exam paper.
+    - Parses document into structured questions with capacity guards
     - Encrypts with AES-256-GCM
     - Splits key via Shamir 3-of-5
     - Pins encrypted blob to IPFS
-    - Registers in local DB with SEALED status
+    - Registers in local DB with SEALED status and parsed questions
     - Appends PAPER_SEALED audit event
     """
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(400, "Empty file")
+
+    filename = file.filename or "paper.pdf"
+
+    # Parse and validate document content
+    try:
+        parsed = parse_upload(pdf_bytes, filename)
+    except (ParseError, CapacityError) as e:
+        raise HTTPException(400, detail=str(e))
+
+    exam_title = parsed["title"]
+    if parsed.get("preamble"):
+        exam_title += " " + " ".join(parsed["preamble"])
+    exam_title = exam_title.strip() or name
+
+    questions = parsed["questions"]
+    questions_json = json.dumps(questions, ensure_ascii=False)
+    first_200 = (" ".join(questions))[:200]
+    engine = parsed["engine"]
 
     exam_id = str(uuid.uuid4())
     created_at = time.time()
@@ -59,11 +83,12 @@ async def create_exam(
     conn.execute("""
         INSERT INTO exams
           (id, name, created_at, release_time, status, ipfs_cid, sha256_plain,
-           nonce_b64, ciphertext_b64, key_hex)
-        VALUES (?, ?, ?, ?, 'SEALED', ?, ?, ?, ?, ?)
+           nonce_b64, ciphertext_b64, key_hex, questions_json)
+        VALUES (?, ?, ?, ?, 'SEALED', ?, ?, ?, ?, ?, ?)
     """, (
-        exam_id, name, created_at, release_time, ipfs_cid,
+        exam_id, exam_title, created_at, release_time, ipfs_cid,
         enc["sha256_plain"], enc["nonce_b64"], enc["ciphertext_b64"], enc["key_hex"],
+        questions_json,
     ))
 
     # Store Shamir shares (one per centre slot — centres 1–5)
@@ -81,7 +106,7 @@ async def create_exam(
     ev = append_event(
         exam_id, "PAPER_SEALED",
         actor="admin",
-        metadata={"sha256": enc["sha256_plain"], "ipfs_cid": ipfs_cid, "name": name},
+        metadata={"sha256": enc["sha256_plain"], "ipfs_cid": ipfs_cid, "name": exam_title},
     )
 
     return ExamCreateResponse(
@@ -90,6 +115,9 @@ async def create_exam(
         ipfs_cid=ipfs_cid,
         status="SEALED",
         audit_hash=ev["event_hash"],
+        question_count=len(questions),
+        preview=first_200,
+        engine=engine,
     )
 
 
@@ -97,9 +125,16 @@ async def create_exam(
 def list_exams():
     """List all registered exams."""
     conn = get_conn()
-    rows = conn.execute("SELECT id, name, status, release_time, ipfs_cid FROM exams ORDER BY created_at DESC").fetchall()
+    rows = conn.execute("SELECT id, name, status, release_time, ipfs_cid, questions_json FROM exams ORDER BY created_at DESC").fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        q_list = json.loads(d["questions_json"]) if d.get("questions_json") else []
+        d["question_count"] = len(q_list)
+        d["preview"] = (" ".join(q_list))[:200] if q_list else ""
+        result.append(d)
+    return result
 
 
 @router.get("/{exam_id}")
@@ -107,10 +142,14 @@ def get_exam(exam_id: str):
     """Get exam details (without key material)."""
     conn = get_conn()
     row = conn.execute(
-        "SELECT id, name, status, release_time, ipfs_cid, sha256_plain FROM exams WHERE id = ?",
+        "SELECT id, name, status, release_time, ipfs_cid, sha256_plain, questions_json FROM exams WHERE id = ?",
         (exam_id,)
     ).fetchone()
     conn.close()
     if not row:
         raise HTTPException(404, "Exam not found")
-    return dict(row)
+    d = dict(row)
+    q_list = json.loads(d["questions_json"]) if d.get("questions_json") else []
+    d["question_count"] = len(q_list)
+    d["preview"] = (" ".join(q_list))[:200] if q_list else ""
+    return d

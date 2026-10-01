@@ -106,7 +106,9 @@ def generate_watermarked_pdf(
         wide  (15 pt) → 1
         narrow ( 9 pt) → 0
     """
-    if mode == "compact":
+    total_words = sum(len(q.split()) for q in questions)
+    use_compact = (mode == "compact") or (mode in ("standard", "auto") and total_words < 200)
+    if use_compact:
         from core.payload import generate_compact_bitstream
         stego_bits = generate_compact_bitstream(centre_id, hall_id, print_num, 500)
     else:

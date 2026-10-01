@@ -171,7 +171,24 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
     Reports centre, confidence, and statistical separation margin.
     """
     from core.variant_engine import inspect_variant_text
-    from backend.routes.batch import SAMPLE_QUESTIONS
+    import json
+
+    conn = get_conn()
+    exam_row = None
+    if payload.paper_id:
+        exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (payload.paper_id,)).fetchone()
+    if not exam_row:
+        exam_row = conn.execute("SELECT * FROM exams ORDER BY created_at DESC LIMIT 1").fetchone()
+    conn.close()
+
+    questions_to_use = []
+    if exam_row:
+        q_raw = exam_row["questions_json"] if "questions_json" in exam_row.keys() else None
+        if q_raw:
+            try:
+                questions_to_use = json.loads(q_raw)
+            except Exception:
+                questions_to_use = []
 
     total_c = payload.total_centres or 50
     cids = list(range(1, total_c + 1))
@@ -180,7 +197,7 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
     var_res = inspect_variant_text(
         leaked_text=payload.leaked_text,
         exam_id=payload.paper_id or "EXAM-2026-MAIN",
-        questions=SAMPLE_QUESTIONS,
+        questions=questions_to_use,
         centre_ids=cids,
     )
 

@@ -44,19 +44,6 @@ router = APIRouter()
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
-# Reuse the same sample questions as the print endpoint
-SAMPLE_QUESTIONS = [
-    "Explain the working principle of a digital watermark. How does it differ from a traditional visible watermark? Discuss the trade-offs between robustness and imperceptibility in forensic applications.",
-    "A train departs from Station A at 60 km/h and returns from Station B at 40 km/h. Assuming the distance between the stations is constant, calculate the average speed of the entire journey and explain why it is not simply the arithmetic mean.",
-    "Describe how Reed-Solomon error correction codes work. Explain why redundancy is necessary when recovering data from a noisy analog channel such as a printed and photographed document.",
-    "Define the term homography in the context of computer vision. Show how it is used to perform perspective correction on a photograph of a document taken at an arbitrary angle.",
-    "A rectangular block of mass 10 kg rests on a horizontal surface. The coefficient of static friction is 0.4. Calculate the minimum horizontal force required to set it in motion. Take g = 9.8 m/s^2.",
-    "Explain the key difference between symmetric encryption such as AES and asymmetric encryption such as RSA. For each, describe a real-world scenario where that scheme would be the preferred choice.",
-    "Using integration, find the area enclosed between the parabola y = x^2 and the straight line y = x + 2. Show all intermediate steps and verify your answer geometrically.",
-    "Describe Shamir's Secret Sharing scheme. Explain why a threshold k-of-n scheme is more resistant to both collusion and key loss compared with splitting a secret into n equal non-overlapping parts.",
-    "The concentration of a drug in the bloodstream follows C(t) = 8e^(-0.5t) mg/L. Calculate the time at which the concentration falls below 1 mg/L and find the total drug exposure over that period.",
-    "Compare the OSI model and the TCP/IP model. For each layer of the OSI model identify the closest equivalent in TCP/IP and give one protocol that operates at that layer.",
-]
 
 
 def _parse_centre_ids(raw: str) -> list[int]:
@@ -292,12 +279,19 @@ def _run_batch_job(job_id: str, exam_id: str, centre_ids: list[int],
     exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (exam_id,)).fetchone()
     conn.close()
 
-    exam_title = exam_row["name"] if exam_row else "Examination Paper"
+    exam_title = (exam_row["name"] if exam_row and "name" in exam_row.keys() else "") or "Examination Paper"
 
     # Generate variants if needed
     min_slots = 4
     variant_data = {}
-    questions_to_use = SAMPLE_QUESTIONS
+    questions_to_use = []
+    if exam_row:
+        q_raw = exam_row["questions_json"] if "questions_json" in exam_row.keys() else None
+        if q_raw:
+            try:
+                questions_to_use = json.loads(q_raw)
+            except Exception:
+                questions_to_use = []
 
     for cid in centre_ids:
         variant = generate_centre_variant(
@@ -725,10 +719,23 @@ def inspect_variant(
 
     cids = _parse_centre_ids(centre_ids_raw) if centre_ids_raw else list(range(1, 101))
 
+    conn = get_conn()
+    exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (exam_id,)).fetchone()
+    conn.close()
+
+    questions_to_use = []
+    if exam_row:
+        q_raw = exam_row["questions_json"] if "questions_json" in exam_row.keys() else None
+        if q_raw:
+            try:
+                questions_to_use = json.loads(q_raw)
+            except Exception:
+                questions_to_use = []
+
     result = inspect_variant_text(
         leaked_text=leaked_text,
         exam_id=exam_id,
-        questions=SAMPLE_QUESTIONS,
+        questions=questions_to_use,
         centre_ids=cids,
         answer_key_text=answer_key_text,
     )

@@ -17,6 +17,7 @@
 | 6 | Difficulty Invariance | `python experiments/variant_attribution_test.py` (Part C) | **5/5 PASS** | Difficulty-invariance index = 1.00 for all variants |
 | 7 | DOCX Export & Steganography | `python experiments/docx_roundtrip_test.py` | **PASS** | Word-spacing stego validated; working copy tagged |
 | 8 | Smart Contract Anti-Grinding | `npx hardhat test contracts/test/lockout_test.js` | **3/3 PASS** | PaperVault lockout tests pass |
+| 9 | Upload Fidelity & Dynamic Paper Parsing | `python experiments/upload_fidelity_test.py` | **5/5 PASS [GO]** | Real DSP tutorial parsed (4 Qs), rendered & decoded Centre 14 |
 
 ---
 
@@ -221,10 +222,56 @@ Exactly 0/5 DOCXs were verified via headless round-trip conversion, and 5/5 DOCX
 
 ---
 
+## Test 9: Upload Fidelity & Dynamic Paper Parsing
+
+**Command:** `python experiments/upload_fidelity_test.py`
+
+```text
+============================================================
+ZeroLock v2 — Upload Fidelity Acceptance Suite
+============================================================
+
+[TEST 1] Parsing real fixture: TY_DSP_26-27_Tutorial_6.pdf ...
+  Parsed 4 questions, 137 words, engine: compact
+  Title: Tutorial 6: Design a digital IIR low-pass filter for a specified cutoff
+  [+] PASS: Question count == 4, Engine == 'compact'
+
+[TEST 2] Rendering Centre 14 with parsed questions (Variants OFF) ...
+  Checking extracted text phrases ...
+  [+] PASS: Key DSP phrases found in rendered PDF text:
+    - 'impulse-invariant'
+    - 'bilinear transformation'
+    - 'cascade, and parallel'
+    - '0014' (Centre identifier)
+
+[TEST 3] Forensic watermark decoding from rendered PDF page ...
+  Decode status: VERIFIED, Centre: 14, Confidence: 0.655
+  [+] PASS: decode_photo -> VERIFIED Centre 14
+
+[TEST 4] Testing Variants ON (semantic / numerical variants) ...
+  Diff in Question 4:
+    Centre 14: Find the direct Form I, direct Form II, cascade, and paralle...
+    Centre 28: Evaluate the direct Form I, direct Form II, cascade, and par...
+  Total variant differences: 1 question(s)
+  Slots C14: 2, Slots C28: 2
+  [+] PASS: Variants ON correctly generated per-centre variants
+
+[TEST 5] Testing short document upload guard (CapacityError) ...
+  Caught expected CapacityError: Paper too short (6 words). Minimum 30 words required for forensic watermark gap modulation.
+  [+] PASS: CapacityError correctly raised without crash
+
+============================================================
+ALL 5 UPLOAD FIDELITY ACCEPTANCE TESTS PASSED [GO]
+============================================================
+```
+
+---
+
 ## Verification Matrix Summary
 
 - **Watermark Codec:** Unchanged, preserved, 6/7 gate test passing.
 - **Smart Contracts:** Unchanged, 3/3 Hardhat tests passing.
+- **Upload Fidelity:** Real exam PDF (`TY_DSP_26-27_Tutorial_6.pdf`) parsed into 4 questions, rendered dynamically in watermarked PDF with no hardcoded fixture questions.
 - **Batch Generation:** Verified for arbitrary sets of centres (e.g. `[14, 28, 42, 7, 99]`), 100% self-checked before packaging.
 - **Semantic Variant Engine:** 100% local, air-gapped, deterministic (`keccak256(exam_id || centre_id)`), difficulty index exactly 1.00.
 - **Attribution Accuracy:** Survives clean retype and 2% OCR noise with separation margins well exceeding +50%.

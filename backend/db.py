@@ -32,7 +32,8 @@ def init_db() -> None:
             ciphertext_b64  TEXT,
             key_hex         TEXT,
             unlock_time_unix REAL,
-            on_chain_paper_id TEXT
+            on_chain_paper_id TEXT,
+            questions_json  TEXT
         );
 
         CREATE TABLE IF NOT EXISTS shamir_shares (
@@ -99,6 +100,11 @@ def init_db() -> None:
         conn.execute("ALTER TABLE print_instances ADD COLUMN timestamp_epoch INTEGER DEFAULT 0")
     if "on_chain_tx" not in existing_cols:
         conn.execute("ALTER TABLE print_instances ADD COLUMN on_chain_tx TEXT")
+
+    # Safe schema migration for exams
+    exam_cols = [c[1] for c in conn.execute("PRAGMA table_info(exams)").fetchall()]
+    if "questions_json" not in exam_cols:
+        conn.execute("ALTER TABLE exams ADD COLUMN questions_json TEXT")
 
     conn.commit()
     conn.close()

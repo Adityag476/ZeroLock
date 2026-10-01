@@ -171,7 +171,7 @@ export default function Setter() {
         {/* Result */}
         {result && (
           <div className="alert alert-success" style={{ marginTop: 20 }}>
-            <div>
+            <div style={{ width: '100%' }}>
               <div style={{ fontWeight: 600 }}>Master Question Paper Sealed & Committed</div>
               <div className="mono" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.6 }}>
                 <div><strong>Exam ID:</strong> {result.exam_id}</div>
@@ -179,6 +179,17 @@ export default function Setter() {
                 <div><strong>SHA-256:</strong> {result.sha256_plain?.slice(0, 24)}…</div>
                 <div><strong>Audit Hash:</strong> {result.audit_hash?.slice(0, 24)}…</div>
               </div>
+              {result.question_count !== undefined && (
+                <div style={{ marginTop: 12, padding: 10, background: 'rgba(0,0,0,0.2)', borderRadius: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span className="badge badge-accent" style={{ fontSize: 11 }}>{result.question_count} Questions Parsed</span>
+                    <span className="badge badge-neutral" style={{ fontSize: 11 }}>Engine: {result.engine}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>
+                    {result.preview}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
