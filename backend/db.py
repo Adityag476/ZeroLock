@@ -80,6 +80,17 @@ def init_db() -> None:
             prev_hash     TEXT NOT NULL,
             event_hash    TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS centre_variants (
+            id                 TEXT PRIMARY KEY,
+            exam_id            TEXT NOT NULL,
+            centre_id          INTEGER NOT NULL,
+            number_map         TEXT,
+            swap_vector        TEXT,
+            variant_answer_key TEXT,
+            difficulty_index   REAL,
+            batch_job_id       TEXT
+        );
     """)
 
     # Safe schema migration for print_instances

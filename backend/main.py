@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from backend.db import init_db
-from backend.routes import create, unlock, print_paper, investigate, audit_log
+from backend.routes import create, unlock, print_paper, investigate, audit_log, batch
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,6 +38,7 @@ app.include_router(unlock.router,      prefix="/api/unlock",      tags=["Unlock"
 app.include_router(print_paper.router, prefix="/api/print",       tags=["Print"])
 app.include_router(investigate.router, prefix="/api/investigate",  tags=["Forensics"])
 app.include_router(audit_log.router,   prefix="/api/audit",       tags=["Audit"])
+app.include_router(batch.router,       prefix="/api/batch",       tags=["Batch"])
 
 @app.get("/api/health")
 def health():

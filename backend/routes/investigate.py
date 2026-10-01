@@ -31,6 +31,7 @@ class HoneyTokenResult(BaseModel):
     message:              str
     implicated_centre_id: Optional[int] = None
     confidence:           float
+    separation_margin:    float = 0.0
     tokens_matched_count: int = 0
     tokens_matched:       list[dict] = []
     runner_up_centre_id:  Optional[int] = None
@@ -166,15 +167,69 @@ def investigation_history(limit: int = 20):
 async def investigate_honey_token(payload: HoneyTokenRequest):
     """
     Investigate leaked plaintext questions (e.g. retyped in Telegram / WhatsApp).
-    Analyzes numerical parameters and correlates against all Centre signatures.
+    Dual-channel inspector: scores both number-profile match and swap-vector match.
+    Reports centre, confidence, and statistical separation margin.
     """
-    res = investigate_plaintext_leak(
+    from core.variant_engine import inspect_variant_text
+    from backend.routes.batch import SAMPLE_QUESTIONS
+
+    total_c = payload.total_centres or 50
+    cids = list(range(1, total_c + 1))
+    
+    # 1. Run variant inspector across both channels (wording swaps + number profile)
+    var_res = inspect_variant_text(
+        leaked_text=payload.leaked_text,
+        exam_id=payload.paper_id or "EXAM-2026-MAIN",
+        questions=SAMPLE_QUESTIONS,
+        centre_ids=cids,
+    )
+
+    # 2. Run legacy numerical template inspector
+    legacy_res = investigate_plaintext_leak(
         leaked_text=payload.leaked_text,
         paper_id=payload.paper_id or "EXAM-2026-MAIN",
-        total_registered_centres=payload.total_centres or 50,
+        total_registered_centres=total_c,
     )
+
+    # Determine best verdict across both channels
+    if var_res.get("status") == "VERIFIED" and (
+        legacy_res.get("status") != "VERIFIED" or var_res.get("confidence", 0) >= legacy_res.get("confidence", 0)
+    ):
+        status = "VERIFIED"
+        cid = var_res.get("implicated_centre_id")
+        conf = float(var_res.get("confidence", 0.0))
+        sep = float(var_res.get("separation_margin", 0.0))
+        msg = f"ATTRIBUTION: Centre #{cid} · confidence {conf}% · separation margin +{sep}%"
+        runner_cid = var_res.get("runner_up_centre_id")
+        runner_conf = float(var_res.get("runner_up_score", 0.0))
+        tokens_count = int(var_res.get("swap_matches", 0) + var_res.get("number_matches", 0))
+        tokens = []
+        numbers_found = []
+    elif legacy_res.get("status") == "VERIFIED":
+        status = "VERIFIED"
+        cid = legacy_res.get("implicated_centre_id")
+        conf = float(legacy_res.get("confidence", 0.0))
+        runner_conf = float(legacy_res.get("runner_up_confidence", 0.0))
+        sep = max(0.0, round(conf - runner_conf, 1))
+        msg = f"ATTRIBUTION: Centre #{cid} · confidence {conf}% · separation margin +{sep}%"
+        runner_cid = legacy_res.get("runner_up_centre_id")
+        tokens_count = int(legacy_res.get("tokens_matched_count", 0))
+        tokens = legacy_res.get("tokens_matched", [])
+        numbers_found = legacy_res.get("numbers_detected", [])
+    else:
+        status = "INCONCLUSIVE"
+        cid = None
+        conf = 0.0
+        sep = 0.0
+        msg = "INCONCLUSIVE: Insufficient variant signal in provided text"
+        runner_cid = None
+        runner_conf = 0.0
+        tokens_count = 0
+        tokens = []
+        numbers_found = legacy_res.get("numbers_detected", [])
+
     inv_id = str(uuid.uuid4())
-    now    = time.time()
+    now = time.time()
 
     try:
         conn = get_conn()
@@ -185,13 +240,8 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             inv_id, now, "retyped_telegram_leak.txt",
-            res.get("status", "INCONCLUSIVE"),
-            res.get("implicated_centre_id"),
-            None, None, int(now),
-            float(res.get("confidence", 0.0)) / 100.0,
-            int(res.get("tokens_matched_count", 0)),
-            0,
-            res.get("message", ""),
+            status, cid, None, None, int(now),
+            conf / 100.0, tokens_count, 0, msg,
         ))
         conn.commit()
         conn.close()
@@ -200,15 +250,16 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
 
     return HoneyTokenResult(
         investigation_id=inv_id,
-        status=res.get("status", "INCONCLUSIVE"),
-        message=res.get("message", ""),
-        implicated_centre_id=res.get("implicated_centre_id"),
-        confidence=float(res.get("confidence", 0.0)),
-        tokens_matched_count=int(res.get("tokens_matched_count", 0)),
-        tokens_matched=res.get("tokens_matched", []),
-        runner_up_centre_id=res.get("runner_up_centre_id"),
-        runner_up_confidence=float(res.get("runner_up_confidence", 0.0)),
-        numbers_detected=res.get("numbers_detected", []),
+        status=status,
+        message=msg,
+        implicated_centre_id=cid,
+        confidence=conf,
+        separation_margin=sep,
+        tokens_matched_count=tokens_count,
+        tokens_matched=tokens,
+        runner_up_centre_id=runner_cid,
+        runner_up_confidence=runner_conf,
+        numbers_detected=numbers_found,
     )
 
 
@@ -217,7 +268,7 @@ def get_honey_token_sample(centre_id: int):
     """Returns sample questions and simulated leak text for testing."""
     questions = compile_center_paper(centre_id=centre_id)
     simulated_leak = (
-        f"🚨 LEAK ALERT [Telegram Channel #NEET_LEAKS]\n"
+        f"[Intercepted Transmission — Channel #NEET_LEAKS]\n"
         f"Q1: {questions[0]['text']}\n"
         f"Q2: {questions[1]['text']}\n"
         f"Fast answer needed!! 5 mins left!"
