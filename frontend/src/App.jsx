@@ -3,6 +3,7 @@ import Setter from './pages/Setter'
 import Centre from './pages/Centre'
 import Forensic from './pages/Forensic'
 import Audit from './pages/Audit'
+import BatchGenerate from './pages/BatchGenerate'
 
 const Icons = {
   Lock: () => (
@@ -50,6 +51,7 @@ const Icons = {
 
 const NAV = [
   { path: '/setter',   label: 'Paper Vault',        Icon: Icons.Lock,     section: 'CUSTODY OPERATIONS' },
+  { path: '/batch',    label: 'Centre Generation',  Icon: Icons.Building, section: null },
   { path: '/centre',   label: 'Centre Custodian',   Icon: Icons.Building, section: null },
   { path: '/forensic', label: 'Forensic Tracer',    Icon: Icons.Radar,    section: 'INTELLIGENCE' },
   { path: '/audit',    label: 'Ledger Audit Chain', Icon: Icons.Ledger,   section: null },
@@ -115,6 +117,7 @@ export default function App() {
           <Routes>
             <Route path="/"          element={<Setter />} />
             <Route path="/setter"    element={<Setter />} />
+            <Route path="/batch"     element={<BatchGenerate />} />
             <Route path="/centre"    element={<Centre />} />
             <Route path="/forensic"  element={<Forensic />} />
             <Route path="/audit"     element={<Audit />} />
