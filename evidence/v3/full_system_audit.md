@@ -88,13 +88,30 @@
 
 ## Automated Acceptance Suites Status
 
-- `python experiments/gate_test.py`: **6/7 PASSED [GO]**
+- `python experiments/gate_test.py`: **7/7 PASSED [GO]**
+- `python experiments/crop_recovery_test.py`: **6/6 PASSED [GO]**
 - `python experiments/batch_test.py`: **5/5 PASSED [GO]**
 - `python experiments/upload_fidelity_test.py`: **5/5 PASSED [GO]**
 - `npx hardhat test contracts/test/lockout_test.js`: **ALL PASS (Gas 84,296)**
 
 ---
 
+## Addendum: Stage 1 Anchorless Crop Recovery (Marginless Decode)
+
+Following the pre-finale hard audit, Stage 1 Anchorless Crop Recovery was integrated into `core/decoder.py` to handle extreme crops containing only question text with zero fiducial crosshairs and zero page edges.
+
+| Test ID | Scenario | Expected | Observed | Status |
+|:---:|---|---|---|:---:|
+| **C1** | Gate-render Centre 42 Crops | 70%, 50%, and 40% crops (questions only, 0 crosshairs) attribute Centre 42 | All 3 crops VERIFIED Centre 42, `mode=anchorless-crop`, `conf=1.0` | **PASS** |
+| **C2** | Real Physics Paper Screenshot | Header + Q1–Q4 screenshot crop without crosshairs attributes Centre 14 | VERIFIED Centre 14, Hall 3, Print 1, `mode=anchorless-crop` | **PASS** |
+| **C3** | Rotated Optical Crops | 10° and 15° camera tilt crops deskew and attribute Centre 42 | Both angles VERIFIED Centre 42, `mode=anchorless-crop`, `conf=1.0` | **PASS** |
+| **C4** | Multi-Centre Isolation | 25-line question crops from Centre 14 vs Centre 28 decode deterministically | Correct distinct centres (14 vs 28) with zero cross-talk | **PASS** |
+| **C5** | Defensive Capacity Guard | 1-question crop (<40 gaps) returns honest `UNKNOWN` with minimum gap guidance | Status `UNKNOWN`, message: "Crop too small — at least ~40 word gaps required" | **PASS** |
+| **C6** | Unwatermarked Crop Guard | Plaintext / unwatermarked crop returns honest `UNKNOWN` without guessing | Status `UNKNOWN`, zero centre attributed, consistency < 60% | **PASS** |
+
+---
+
 ## Conclusion & Deployment Readiness
 
-The ZeroLock system has successfully passed all 43 hard audit checks from a fresh state under strict airgap networking conditions. Every digital custody guarantee, physical micro-steganography feature, NLP semantic honey-token defense, computer vision rectification fallback, and frontend portal has been proven fully operational and aligned with the specification.
+The ZeroLock system has successfully passed all 43 hard audit checks and all 6 anchorless crop recovery suites from a fresh state under strict airgap networking conditions. Every digital custody guarantee, physical micro-steganography feature, NLP semantic honey-token defense, computer vision rectification fallback, anchorless crop recovery engine, and frontend portal has been proven fully operational and aligned with the specification.
+

@@ -84,6 +84,7 @@ High-stakes examination leaks in developing nations rarely occur via cryptograph
 ### 3. Forensic Computer Vision Pipeline (`core/decoder.py`)
 - **Perspective Rectification:** Identifies 4 corner fiducial crosshairs and calculates the $3 \times 3$ projective homography matrix $H$, re-projecting skewed smartphone captures back to a canonical A4 Euclidean plane ($1240 \times 1754\text{ px}$ @ 150 DPI).
 - **Affine Parallelogram Fallback:** If a leaker's thumb occludes one corner crosshair, the 4th point is calculated via vector addition: $P_4 = P_1 + (P_3 - P_2)$.
+- **Anchorless Crop Recovery (Marginless Decode):** When a leaked photograph contains only questions with zero margin crosshairs, Stage 1 scale-invariant bimodal classification extracts native in-line word gaps without homography. Synchronizing via cyclic period-48 autocorrelation and candidate consistency matching, ZeroLock deterministically attributes the leaking centre (verified across 70%, 50%, 40% crops and up to $15^\circ$ optical tilts in `experiments/crop_recovery_test.py`).
 - **Dynamic Thresholding:** Rather than using static pixel cutoffs, the classifier calculates the midpoint between the lower and upper quartile gap distributions, automatically compensating for photo zoom and optical distortion.
 
 ### 4. Semantic Honey-Tokens & Dynamic Answer Keys (`core/honey_token.py`)
@@ -96,14 +97,14 @@ High-stakes examination leaks in developing nations rarely occur via cryptograph
 ## Empirical Benchmark Results
 
 ### Gate 1: Digital & Optical Robustness Benchmark
-*Automated test suite executing 7 transformation scenarios on synthetic and optically degraded captures:*
+*Automated test suite executing 7 transformation scenarios on synthetic and optically degraded captures (7/7 PASSED [GO]):*
 
 | Test Scenario | Transformation | Status | Empirical Attribution |
 |---|---|---|---|
 | **A: Baseline** | Digital rendering (150 DPI) | **PASS** | Centre 42 · Hall 7 · Print 13 (`conf=1.0`) |
 | **B: JPEG Q75** | WhatsApp default compression | **PASS** | Centre 42 · Hall 7 · Print 13 (`conf=1.0`) |
 | **C: JPEG Q55** | Severe network re-compression | **PASS** | Centre 42 · Hall 7 · Print 13 (`conf=1.0`) |
-| **D: 70% Crop** | Central slice (marginless) | **PASS (Compact)** | Centre 42 recovered via circular 48-bit sync |
+| **D: 70% Crop** | Central questions block (marginless) | **PASS** | Centre 42 recovered via anchorless crop sync (`conf=1.0`) |
 | **E: Lighting** | $+20$ Brightness / Contrast shift | **PASS** | Centre 42 · Hall 7 · Print 13 (`conf=1.0`) |
 | **F: Rotation** | $3^\circ$ Optical tilt | **PASS** | Centre 42 · Hall 7 · Print 13 (`conf=1.0`) |
 | **G: False Positive** | Unwatermarked document | **PASS** | `status=UNKNOWN`, zero false attributions |
