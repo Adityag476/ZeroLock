@@ -100,7 +100,7 @@ def parse_upload(file_bytes: bytes, filename: str) -> dict:
 
     raw_lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
     if not raw_lines:
-        raise ParseError("Document contains no readable text.")
+        raise ParseError("Document contains no readable text. Please upload a text-based PDF or DOCX.")
 
     # Strip institutional junk lines
     clean_lines = []
