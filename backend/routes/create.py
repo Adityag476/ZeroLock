@@ -58,10 +58,9 @@ async def create_exam(
     except (ParseError, CapacityError) as e:
         raise HTTPException(400, detail=str(e))
 
-    exam_title = parsed["title"]
-    if parsed.get("preamble"):
-        exam_title += " " + " ".join(parsed["preamble"])
-    exam_title = exam_title.strip() or name
+    exam_title = (name or "").strip() or parsed.get("title", "").strip() or "Secure Examination Paper"
+    if len(exam_title) > 60:
+        exam_title = exam_title[:57] + "..."
 
     questions = parsed["questions"]
     questions_json = json.dumps(questions, ensure_ascii=False)
