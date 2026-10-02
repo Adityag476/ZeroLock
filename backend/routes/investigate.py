@@ -53,6 +53,8 @@ class InvestigationResult(BaseModel):
     exam_match:       Optional[dict]  = None
     gap_sample:       list[float]     = []
     threshold:        Optional[float] = None
+    mode:             Optional[str]   = "fiducial"
+    gap_count:        Optional[int]   = None
 
 
 @router.post("/", response_model=InvestigationResult)
@@ -149,6 +151,8 @@ async def investigate(
         exam_match=exam_match,
         gap_sample=result.get("gap_sample", []),
         threshold=result.get("threshold"),
+        mode=result.get("mode", "fiducial"),
+        gap_count=result.get("gap_count", result.get("bit_count", 0)),
     )
 
 

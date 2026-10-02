@@ -352,15 +352,37 @@ export default function Forensic() {
               <div>
                 {/* Verdict card */}
                 <div className="verdict-card" style={{ marginBottom: 20 }}>
-                  <div style={{ display: 'inline-flex', marginBottom: 12 }}>
+                  <div style={{ display: 'inline-flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                     <span className={`badge ${result.status === 'VERIFIED' ? 'badge-success' : 'badge-danger'}`} style={{ padding: '6px 14px', fontSize: 12 }}>
                       {result.status === 'VERIFIED' ? 'Proven Origin Identified' : 'Signal Inconclusive'}
+                    </span>
+                    <span className="badge badge-neutral" style={{ padding: '6px 14px', fontSize: 12 }}>
+                      Recovery mode: {result.mode === 'anchorless-crop' ? 'Anchorless crop' : 'Fiducial'}
                     </span>
                   </div>
 
                   <div className="verdict-title" style={{ color: result.status === 'VERIFIED' ? 'var(--text-primary)' : 'var(--danger-text)' }}>
                     {result.status === 'VERIFIED' ? 'Physical Watermark Recovered' : 'Watermark Unresolved'}
                   </div>
+
+                  {result.status !== 'VERIFIED' && (
+                    <div style={{
+                      marginTop: 14,
+                      padding: '12px 14px',
+                      background: '#fff9e6',
+                      border: '1px solid #ffe58f',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: 12.5,
+                      color: '#874d00',
+                      lineHeight: 1.5,
+                    }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>Anchorless Crop Guidance</div>
+                      <div>Word gaps detected: <strong>{result.gap_count || result.bit_count}</strong> (Minimum required: <strong>40</strong> word gaps, ~2 full questions).</div>
+                      <div style={{ marginTop: 4, fontSize: 11.5, color: '#a65900' }}>
+                        Crop too small — at least ~40 word gaps (about two questions) required to establish statistical significance.
+                      </div>
+                    </div>
+                  )}
 
                   {result.status === 'VERIFIED' && (
                     <div className="verdict-meta-row">
