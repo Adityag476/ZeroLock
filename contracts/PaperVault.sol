@@ -23,6 +23,7 @@ contract PaperVault {
 
     event PaperRegistered(bytes32 indexed paperId, uint64 unlockTime, string ipfsCid);
     event CenterAccessGranted(bytes32 indexed paperId, bytes32 indexed centerId, uint32 printInstance, uint64 timestamp);
+    event PaperUnlocked(bytes32 indexed paperId, bytes32 indexed centerId, uint64 unlockedAt, uint32 printInstance);
     event FailedUnlockAttempt(bytes32 indexed paperId, bytes32 indexed centerId, uint8 attempts);
 
     uint8 public constant MAX_FAILED_ATTEMPTS = 5;
@@ -94,6 +95,7 @@ contract PaperVault {
         uint32 currentInstance = ++printInstances[paperId];
 
         emit CenterAccessGranted(paperId, centerId, currentInstance, uint64(block.timestamp));
+        emit PaperUnlocked(paperId, centerId, uint64(block.timestamp), currentInstance);
         return currentInstance;
     }
 
@@ -129,6 +131,7 @@ contract PaperVault {
         uint32 currentInstance = ++printInstances[paperId];
 
         emit CenterAccessGranted(paperId, centerId, currentInstance, uint64(block.timestamp));
+        emit PaperUnlocked(paperId, centerId, uint64(block.timestamp), currentInstance);
         return currentInstance;
     }
 
