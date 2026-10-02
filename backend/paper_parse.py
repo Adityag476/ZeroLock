@@ -136,25 +136,27 @@ def parse_upload(file_bytes: bytes, filename: str) -> dict:
     # Segment questions and fold sub-parts
     questions = []
     curr_q = []
+    expected_q_num = 1
 
     for idx, l in enumerate(body_lines):
-        is_q_start = False
-        next_line = body_lines[idx + 1] if idx + 1 < len(body_lines) else ""
+        m = re.match(r'^(?:Q(?:uestion)?\s*)?([1-9]\d*)[.)]\s*(.*)', l)
+        m_lone = re.match(r'^([1-9]\d*)[.)]?$', l)
+        num = None
+        rem = ""
+        if m:
+            num = int(m.group(1))
+            rem = m.group(2).strip()
+        elif m_lone:
+            num = int(m_lone.group(1))
+            rem = ""
 
-        # Numbered questions starting with 1-9 (avoiding decimal floats like 0.28)
-        if re.match(r'^(?:Q(?:uestion)?\s*)?[1-9]\d*[.)]\s*', l):
-            is_q_start = True
-        elif re.match(r'^[1-9]\d*$', l):
-            # Standalone integer number followed by an instructional sentence
-            if next_line and re.match(r'^[A-Z][a-zA-Z\s,]{5,}', next_line) and not re.match(r'^[A-Za-z]\s*\(|^\s*[\(\[=+\-*/]', next_line):
-                is_q_start = True
-
-        if is_q_start:
+        # Only treat as a new question start if number matches expected sequence.
+        # This keeps sub-points (e.g. 1. Input sequence ..., 2. Output sequence ...) inside Q11.
+        if num == expected_q_num:
             if curr_q:
                 questions.append(" ".join(curr_q))
                 curr_q = []
-            m = re.match(r'^(?:Q(?:uestion)?\s*)?[1-9]\d*[.)]?\s*(.*)', l)
-            rem = m.group(1).strip() if m else ""
+            expected_q_num += 1
             if rem:
                 curr_q.append(rem)
         else:

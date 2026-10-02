@@ -187,7 +187,7 @@ def generate_watermarked_pdf(
 
             current_y -= LINE_HEIGHT
 
-        current_y -= LINE_HEIGHT * 0.4
+        current_y -= LINE_HEIGHT * 0.75
         q_num += 1
 
     # Footer

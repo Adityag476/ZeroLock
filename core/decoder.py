@@ -229,7 +229,7 @@ def extract_gaps_from_line(
     proj = np.sum(binary, axis=0) // 255
 
     line_h = max(1, y1 - y0)
-    min_ink = max(1, line_h // 4)
+    min_ink = max(1, min(2, line_h // 4))
 
     in_word = False
     word_end = 0

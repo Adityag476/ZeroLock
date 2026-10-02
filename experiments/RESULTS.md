@@ -1,12 +1,12 @@
 # ZeroLeak Gate Test Results
-Generated: 2026-10-01 15:02:42
+Generated: 2026-10-02 07:30:22
 
 | Test | Result | Detail |
 |------|--------|--------|
 | A: Digital baseline | **PASS** | status=VERIFIED c=42 h=7 p=13 bits=209 conf=1.0 |
 | B: JPEG q75 compress | **PASS** | status=VERIFIED c=42 h=7 p=13 bits=209 conf=1.0 |
 | C: JPEG q55 compress | **PASS** | status=VERIFIED c=42 h=7 p=13 bits=209 conf=1.0 |
-| D: Cropped 70% | **FAIL** | status=CORRUPTED c=? h=? p=? bits=141 conf=0.5035714285714286 |
+| D: Cropped 70% | **FAIL** | status=CORRUPTED c=? h=? p=? bits=140 conf=0.5 |
 | E: Brightness +20 | **PASS** | status=VERIFIED c=42 h=7 p=13 bits=209 conf=1.0 |
 | F: Rotation 3deg | **PASS** | status=VERIFIED c=42 h=7 p=13 bits=209 conf=1.0 |
 | G: False-positive guard | **PASS** | status=UNKNOWN c=? h=? p=? bits=0 conf=0.0 |
