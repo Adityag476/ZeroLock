@@ -91,21 +91,22 @@ def preprocess(image: np.ndarray) -> np.ndarray:
 # Step 2 — Anchor detection
 # ---------------------------------------------------------------------------
 
-def _find_corner_blobs(binary: np.ndarray) -> list[tuple[float, float]]:
+def _find_corner_blobs(binary: np.ndarray) -> dict[str, tuple[float, float]]:
     """
     Find the 4 corner crosshair anchors by searching near the corners
     and selecting the candidate closest to the true image corner.
+    Returns a dict with found corner labels: 'TL', 'TR', 'BL', 'BR'.
     """
     h, w = binary.shape
     corner_defs = [
-        (0, 0, int(w * ANCHOR_REGION_FRAC), int(h * ANCHOR_REGION_FRAC), 0, 0),                       # TL
-        (int(w * (1 - ANCHOR_REGION_FRAC)), 0, w, int(h * ANCHOR_REGION_FRAC), w, 0),                # TR
-        (0, int(h * (1 - ANCHOR_REGION_FRAC)), int(w * ANCHOR_REGION_FRAC), h, 0, h),                # BL
-        (int(w * (1 - ANCHOR_REGION_FRAC)), int(h * (1 - ANCHOR_REGION_FRAC)), w, h, w, h),          # BR
+        ("TL", 0, 0, int(w * ANCHOR_REGION_FRAC), int(h * ANCHOR_REGION_FRAC), 0, 0),                       # TL
+        ("TR", int(w * (1 - ANCHOR_REGION_FRAC)), 0, w, int(h * ANCHOR_REGION_FRAC), w, 0),                # TR
+        ("BL", 0, int(h * (1 - ANCHOR_REGION_FRAC)), int(w * ANCHOR_REGION_FRAC), h, 0, h),                # BL
+        ("BR", int(w * (1 - ANCHOR_REGION_FRAC)), int(h * (1 - ANCHOR_REGION_FRAC)), w, h, w, h),          # BR
     ]
 
-    centers = []
-    for (x0, y0, x1, y1, cx_corner, cy_corner) in corner_defs:
+    corners = {}
+    for (label, x0, y0, x1, y1, cx_corner, cy_corner) in corner_defs:
         region = binary[y0:y1, x0:x1]
         cnts, _ = cv2.findContours(region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         candidates = []
@@ -120,36 +121,45 @@ def _find_corner_blobs(binary: np.ndarray) -> list[tuple[float, float]]:
             cx = x0 + bx + bw / 2.0
             cy = y0 + by + bh / 2.0
             dist = float(np.hypot(cx - cx_corner, cy - cy_corner))
+            if dist > max(w, h) * 0.15:
+                continue
             score = (1.0 - abs(1.0 - aspect)) / (dist + 1.0)
             candidates.append((score, (cx, cy)))
 
         if candidates:
             candidates.sort(key=lambda item: item[0], reverse=True)
-            centers.append(candidates[0][1])
+            corners[label] = candidates[0][1]
 
-    return centers
+    return corners
 
 
 def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
     """
     Detect the 4 corner crosshair anchors.
+    Falls back to affine parallelogram recovery (P4 = P1 + P3 - P2) if exactly 3 anchors found.
     Returns 4×2 float32 array ordered [TL, TR, BL, BR], or None.
     """
-    centers = _find_corner_blobs(binary)
-    if len(centers) < 4:
+    corners = _find_corner_blobs(binary)
+    if len(corners) < 3:
         return None
 
-    h, w = binary.shape
-    # Cluster into top and bottom halves
-    centers.sort(key=lambda p: p[1])
-    top = sorted(centers[:2], key=lambda p: p[0])
-    bot = sorted(centers[2:], key=lambda p: p[0])
+    # Affine parallelogram recovery if 1 corner occluded (e.g., thumb / crop)
+    if len(corners) == 3:
+        if "TL" not in corners:
+            tr, bl, br = np.array(corners["TR"]), np.array(corners["BL"]), np.array(corners["BR"])
+            corners["TL"] = tuple(tr + bl - br)
+        elif "TR" not in corners:
+            tl, bl, br = np.array(corners["TL"]), np.array(corners["BL"]), np.array(corners["BR"])
+            corners["TR"] = tuple(tl + br - bl)
+        elif "BL" not in corners:
+            tl, tr, br = np.array(corners["TL"]), np.array(corners["TR"]), np.array(corners["BR"])
+            corners["BL"] = tuple(tl + br - tr)
+        elif "BR" not in corners:
+            tl, tr, bl = np.array(corners["TL"]), np.array(corners["TR"]), np.array(corners["BL"])
+            corners["BR"] = tuple(tr + bl - tl)
 
-    if len(top) < 2 or len(bot) < 2:
-        return None
-
-    pts = np.float32([top[0], top[1], bot[0], bot[1]])
-    return pts   # TL, TR, BL, BR
+    pts = np.float32([corners["TL"], corners["TR"], corners["BL"], corners["BR"]])
+    return pts
 
 
 # ---------------------------------------------------------------------------
