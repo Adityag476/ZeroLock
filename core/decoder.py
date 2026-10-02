@@ -121,7 +121,7 @@ def _find_corner_blobs(binary: np.ndarray) -> dict[str, tuple[float, float]]:
             cx = x0 + bx + bw / 2.0
             cy = y0 + by + bh / 2.0
             dist = float(np.hypot(cx - cx_corner, cy - cy_corner))
-            if dist > max(w, h) * 0.15:
+            if dist > 175.0:
                 continue
             score = (1.0 - abs(1.0 - aspect)) / (dist + 1.0)
             candidates.append((score, (cx, cy)))

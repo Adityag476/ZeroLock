@@ -21,16 +21,18 @@ async function main() {
     timestamp: new Date().toISOString(),
   };
 
-  const outPath = "../backend/contract_address.json";
+  const path = require("path");
+  const rootDir = path.resolve(__dirname, "../..");
+  const outPath = path.join(rootDir, "backend/contract_address.json");
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(deployment, null, 2));
   console.log("Contract address saved to:", outPath);
 
   // Also export ABI for frontend
-  const artifact = require("../artifacts/contracts/ExamVault.sol/ExamVault.json");
-  fs.writeFileSync(
-    "../frontend/src/abi/ExamVault.json",
-    JSON.stringify(artifact.abi, null, 2)
-  );
+  const artifact = require(path.join(rootDir, "artifacts/contracts/ExamVault.sol/ExamVault.json"));
+  const abiPath = path.join(rootDir, "frontend/src/abi/ExamVault.json");
+  fs.mkdirSync(path.dirname(abiPath), { recursive: true });
+  fs.writeFileSync(abiPath, JSON.stringify(artifact.abi, null, 2));
   console.log("ABI exported to frontend/src/abi/ExamVault.json");
 }
 
