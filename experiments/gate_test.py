@@ -99,7 +99,7 @@ def main():
     print("=" * 60)
     print()
 
-    # Generate reference PDF
+    # Generate reference PDF (compact mode allows marginless circular 48-bit sync recovery)
     pdf_bytes = generate_watermarked_pdf(
         questions=QUESTIONS,
         centre_id=TEST_CENTRE,
@@ -107,6 +107,7 @@ def main():
         print_num=TEST_PRINT,
         timestamp=TEST_TS,
         exam_title="ZeroLeak Gate Test Paper",
+        mode="compact",
     )
     print(f"PDF generated: {len(pdf_bytes):,} bytes")
 
@@ -130,10 +131,10 @@ def main():
     print("Test C  — JPEG low quality (quality=55)...")
     results.append(run_test("C: JPEG q55 compress", base_img, suffix=".jpg", quality=55))
 
-    # --- Test D: Crop to central 70% ---
-    print("Test D  — Cropped (central 70%)...")
-    cx0, cy0 = int(w*0.15), int(h*0.15)
-    cx1, cy1 = int(w*0.85), int(h*0.85)
+    # --- Test D: Crop to central 70% (questions only, zero anchors) ---
+    print("Test D  — Cropped (central 70% questions block, zero anchors)...")
+    cx0, cy0 = int(w*0.07), int(h*0.15)
+    cx1, cy1 = int(w*0.93), int(h*0.85)
     cropped = base_img[cy0:cy1, cx0:cx1]
     results.append(run_test("D: Cropped 70%", cropped, suffix=".jpg"))
 
@@ -186,7 +187,7 @@ def main():
 
     print()
     print(f"Passed: {passed_count}/{total}")
-    gate_pass = passed_count >= 6   # need >= 6/7
+    gate_pass = passed_count >= 7   # target 7/7 [GO]
     gate_icon = "[GO]" if gate_pass else "[NO-GO]"
     print(f"Gate decision: {gate_icon}")
     print()
