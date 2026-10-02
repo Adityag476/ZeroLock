@@ -205,6 +205,62 @@ def test_c6_unwatermarked_crop_guard():
     print(f"  [+] Unwatermarked crop returned honest UNKNOWN: '{res['message']}' (no centre attributed)")
 
 
+def test_c7_stage0_hijack_fallthrough():
+    """C7: if the anchor detector ever misfires on a crop (env-specific false
+    positive) and routes it into the fiducial path, the pipeline must fall
+    through to the anchorless engine instead of returning the stage-0 failure.
+    Simulated by monkeypatching detect_anchors to return fake corners."""
+    print("\n[C7] Stage-0 Hijack Fallthrough (misrouted crop self-heals)...")
+    import core.decoder as dec
+    fixture = os.path.join(os.path.dirname(__file__), "fixtures", "crop_89.png")
+    assert os.path.exists(fixture), "fixtures/crop_89.png missing"
+    img = cv2.imread(fixture)
+    h, w = img.shape[:2]
+
+    orig = dec.detect_anchors
+    try:
+        dec.detect_anchors = lambda b: np.array(
+            [[10, 10], [w - 10, 10], [w - 10, h - 10], [10, h - 10]], "float32")
+        res = decode_photo(fixture)
+    finally:
+        dec.detect_anchors = orig
+
+    assert res.get("status") == "VERIFIED", f"C7 expected VERIFIED via fallthrough, got {res.get('status')}: {res.get('message')}"
+    assert res.get("mode") == "anchorless-crop", f"C7 expected anchorless-crop mode, got {res.get('mode')}"
+    assert res.get("centre_id") == 89, f"C7 expected Centre 89, got {res.get('centre_id')}"
+    print(f"  [+] Hijacked crop self-healed: {res['message']}")
+
+
+def test_c8_fallthrough_size_guard():
+    """C8: the stage-0->stage-1 fallthrough must NOT fire on full-page-sized
+    images (a failing full-page decode must not be second-guessed by the
+    anchorless engine)."""
+    print("\n[C8] Fallthrough Size Guard (full-page not second-guessed)...")
+    import core.decoder as dec
+    full = np.full((dec.TARGET_H, dec.TARGET_W, 3), 255, np.uint8)
+    small = cv2.imread(os.path.join(os.path.dirname(__file__), "fixtures", "crop_physics.png"))
+    fh, fw = small.shape[:2]
+    full[100:100 + fh, 100:100 + fw] = small
+
+    orig = dec.detect_anchors
+    try:
+        dec.detect_anchors = lambda b: np.array(
+            [[10, 10], [dec.TARGET_W - 10, 10],
+             [dec.TARGET_W - 10, dec.TARGET_H - 10], [10, dec.TARGET_H - 10]], "float32")
+        path = os.path.join(tempfile.gettempdir(), "c8_full.png")
+        cv2.imwrite(path, full)
+        try:
+            res = decode_photo(path)
+        finally:
+            os.unlink(path)
+    finally:
+        dec.detect_anchors = orig
+
+    assert res.get("mode") != "anchorless-crop", f"C8 guard leaked: full-page image used anchorless fallthrough"
+    assert res.get("status") != "VERIFIED", "C8 expected non-verified stage-0 outcome on garbage full-page warp"
+    print(f"  [+] Full-page hijack stayed in fiducial path: {res.get('status')} / {res.get('mode')}")
+
+
 def main():
     print("=" * 70)
     print("ZeroLock — Anchorless Crop Recovery Acceptance Test Suite")
@@ -216,9 +272,11 @@ def main():
     test_c4_multi_centre_isolation()
     test_c5_short_crop_guard()
     test_c6_unwatermarked_crop_guard()
+    test_c7_stage0_hijack_fallthrough()
+    test_c8_fallthrough_size_guard()
 
     print("\n" + "=" * 70)
-    print("ALL 6 CROP RECOVERY ACCEPTANCE SUITES PASSED [GO]")
+    print("ALL 8 CROP RECOVERY ACCEPTANCE SUITES PASSED [GO]")
     print("=" * 70)
 
 

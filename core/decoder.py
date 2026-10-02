@@ -434,138 +434,95 @@ def _match_compact_candidates(
 
 
 # ---------------------------------------------------------------------------
-# Full pipeline
-# ---------------------------------------------------------------------------
-
-def decode_photo(
-    image_path: str,
-    debug_dir: Optional[str] = None,
-) -> dict:
-    """
-    Full forensic decoding pipeline.
-
-    Args:
-        image_path: Path to a phone photo (JPEG/PNG) of a watermarked paper.
-        debug_dir:  If given, save intermediate images here for inspection.
-
-    Returns:
-        dict with keys:
-            status      — "VERIFIED" | "CORRUPTED" | "UNKNOWN"
-            centre_id   — int (if VERIFIED)
-            hall_id     — int (if VERIFIED)
-            print_num   — int (if VERIFIED)
-            timestamp   — int (if VERIFIED)
-            confidence  — float 0..1
-            message     — human-readable explanation
-            bit_count   — total bits extracted
-    """
+def _fiducial_decode(image: np.ndarray, anchors: np.ndarray, debug_dir: Optional[str] = None) -> dict:
+    """Stage 0: fiducial anchor path (>=3 anchors). Returns its own outcome dict."""
+    warped_full = rectify(image, anchors)
+    canonical = cv2.cvtColor(warped_full, cv2.COLOR_BGR2GRAY) if len(warped_full.shape) == 3 else warped_full
+    anchor_found = True
     if debug_dir:
-        os.makedirs(debug_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(debug_dir, "2_warped.png"), warped_full)
 
-    # Load
-    image = cv2.imread(image_path)
-    if image is None:
-        return {"status": "UNKNOWN", "message": "Cannot read image file", "confidence": 0.0}
-
-    binary = preprocess(image)
-    if debug_dir:
-        cv2.imwrite(os.path.join(debug_dir, "1_binary.png"), binary)
-
-    # Anchor detection
-    anchors = detect_anchors(binary)
-    if anchors is not None:
-        # =======================================================================
-        # STAGE 0: Existing Fiducial Anchor Path (>=3 anchors)
-        # =======================================================================
-        warped_full = rectify(image, anchors)
-        canonical = cv2.cvtColor(warped_full, cv2.COLOR_BGR2GRAY) if len(warped_full.shape) == 3 else warped_full
-        anchor_found = True
-        if debug_dir:
-            cv2.imwrite(os.path.join(debug_dir, "2_warped.png"), warped_full)
-
-        lines = segment_lines(canonical)
-        if not lines:
-            return {
-                "status": "UNKNOWN",
-                "message": "No text lines detected in image",
-                "confidence": 0.0,
-                "bit_count": 0,
-                "gap_count": 0,
-                "anchor_found": True,
-                "mode": "fiducial",
-            }
-
-        if debug_dir:
-            vis = cv2.cvtColor(canonical, cv2.COLOR_GRAY2BGR)
-            for (y0, y1) in lines:
-                cv2.rectangle(vis, (0, y0), (TARGET_W, y1), (0, 255, 0), 1)
-            cv2.imwrite(os.path.join(debug_dir, "3_lines.png"), vis)
-
-        all_gaps: list[float] = []
-        for (y0, y1) in lines:
-            gaps = extract_gaps_from_line(canonical, y0, y1)
-            all_gaps.extend(gaps)
-
-        if len(all_gaps) < 40:
-            return {
-                "status": "UNKNOWN",
-                "message": f"Too few inter-word gaps ({len(all_gaps)}) — need at least 40",
-                "confidence": 0.0,
-                "bit_count": len(all_gaps),
-                "gap_count": len(all_gaps),
-                "anchor_found": True,
-                "mode": "fiducial",
-            }
-
-        bits = gaps_to_bits(all_gaps)
-        result = sliding_decode(bits)
-
-        p25 = float(np.percentile(all_gaps, 25)) if all_gaps else 0.0
-        p75 = float(np.percentile(all_gaps, 75)) if all_gaps else 0.0
-        th = THRESHOLD_PX if (p75 - p25 < 3.0) else (p25 + p75) / 2.0
-        gap_sample = [round(float(g), 1) for g in all_gaps[:64]]
-
-        if result is None or not result.get("valid"):
-            return {
-                "status": "CORRUPTED",
-                "message": "Watermark signal found but Reed-Solomon decode failed",
-                "confidence": float(len(bits)) / 280,
-                "bit_count": len(bits),
-                "gap_count": len(all_gaps),
-                "anchor_found": True,
-                "threshold": round(float(th), 1),
-                "gap_sample": gap_sample,
-                "mode": "fiducial",
-            }
-
-        confidence = min(1.0, len(bits) / 200)
-
+    lines = segment_lines(canonical)
+    if not lines:
         return {
-            "status": "VERIFIED",
-            "centre_id": result["centre_id"],
-            "hall_id": result["hall_id"],
-            "print_num": result["print_num"],
-            "timestamp": result.get("timestamp", 0),
-            "confidence": round(confidence, 3),
+            "status": "UNKNOWN",
+            "message": "No text lines detected in image",
+            "confidence": 0.0,
+            "bit_count": 0,
+            "gap_count": 0,
+            "anchor_found": True,
+            "mode": "fiducial",
+        }
+
+    if debug_dir:
+        vis = cv2.cvtColor(canonical, cv2.COLOR_GRAY2BGR)
+        for (y0, y1) in lines:
+            cv2.rectangle(vis, (0, y0), (TARGET_W, y1), (0, 255, 0), 1)
+        cv2.imwrite(os.path.join(debug_dir, "3_lines.png"), vis)
+
+    all_gaps: list[float] = []
+    for (y0, y1) in lines:
+        gaps = extract_gaps_from_line(canonical, y0, y1)
+        all_gaps.extend(gaps)
+
+    if len(all_gaps) < 40:
+        return {
+            "status": "UNKNOWN",
+            "message": f"Too few inter-word gaps ({len(all_gaps)}) — need at least 40",
+            "confidence": 0.0,
+            "bit_count": len(all_gaps),
+            "gap_count": len(all_gaps),
+            "anchor_found": True,
+            "mode": "fiducial",
+        }
+
+    bits = gaps_to_bits(all_gaps)
+    result = sliding_decode(bits)
+
+    p25 = float(np.percentile(all_gaps, 25)) if all_gaps else 0.0
+    p75 = float(np.percentile(all_gaps, 75)) if all_gaps else 0.0
+    th = THRESHOLD_PX if (p75 - p25 < 3.0) else (p25 + p75) / 2.0
+    gap_sample = [round(float(g), 1) for g in all_gaps[:64]]
+
+    if result is None or not result.get("valid"):
+        return {
+            "status": "CORRUPTED",
+            "message": "Watermark signal found but Reed-Solomon decode failed",
+            "confidence": float(len(bits)) / 280,
             "bit_count": len(bits),
             "gap_count": len(all_gaps),
-            "bit_offset": result.get("bit_offset", 0),
             "anchor_found": True,
             "threshold": round(float(th), 1),
             "gap_sample": gap_sample,
             "mode": "fiducial",
-            "message": (
-                f"LEAK TRACED — Centre {result['centre_id']} · "
-                f"Hall {result['hall_id']} · Print #{result['print_num']} · "
-                f"Epoch {result.get('timestamp', 0)}"
-            ),
         }
 
-    # =======================================================================
-    # STAGE 1: Anchorless Crop Recovery (runs only when Stage 0 yields <3 anchors)
-    # =======================================================================
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+    confidence = min(1.0, len(bits) / 200)
 
+    return {
+        "status": "VERIFIED",
+        "centre_id": result["centre_id"],
+        "hall_id": result["hall_id"],
+        "print_num": result["print_num"],
+        "timestamp": result.get("timestamp", 0),
+        "confidence": round(confidence, 3),
+        "bit_count": len(bits),
+        "gap_count": len(all_gaps),
+        "bit_offset": result.get("bit_offset", 0),
+        "anchor_found": True,
+        "threshold": round(float(th), 1),
+        "gap_sample": gap_sample,
+        "mode": "fiducial",
+        "message": (
+            f"LEAK TRACED — Centre {result['centre_id']} · "
+            f"Hall {result['hall_id']} · Print #{result['print_num']} · "
+            f"Epoch {result.get('timestamp', 0)}"
+        ),
+    }
+
+
+def _anchorless_decode(gray: np.ndarray) -> dict:
+    """Stage 1: anchorless crop recovery on a native grayscale image."""
     # Step 1a: Preprocess & tilt correction (deskewing up to +/-20 degrees)
     deskewed_gray, est_angle = _deskew_image(gray)
 
@@ -733,6 +690,65 @@ def decode_photo(
         "gap_sample": [round(float(g), 1) for g in all_gaps[:64]],
     }
 
+
+
+# Full pipeline
+# ---------------------------------------------------------------------------
+
+def decode_photo(
+    image_path: str,
+    debug_dir: Optional[str] = None,
+) -> dict:
+    """
+    Full forensic decoding pipeline.
+
+    Args:
+        image_path: Path to a phone photo (JPEG/PNG) of a watermarked paper.
+        debug_dir:  If given, save intermediate images here for inspection.
+
+    Returns:
+        dict with keys:
+            status      — "VERIFIED" | "CORRUPTED" | "UNKNOWN"
+            centre_id   — int (if VERIFIED)
+            hall_id     — int (if VERIFIED)
+            print_num   — int (if VERIFIED)
+            timestamp   — int (if VERIFIED)
+            confidence  — float 0..1
+            message     — human-readable explanation
+            bit_count   — total bits extracted
+    """
+    if debug_dir:
+        os.makedirs(debug_dir, exist_ok=True)
+
+    # Load
+    image = cv2.imread(image_path)
+    if image is None:
+        return {"status": "UNKNOWN", "message": "Cannot read image file", "confidence": 0.0}
+
+    binary = preprocess(image)
+    if debug_dir:
+        cv2.imwrite(os.path.join(debug_dir, "1_binary.png"), binary)
+
+    # Anchor detection
+    anchors = detect_anchors(binary)
+    if anchors is not None:
+        # STAGE 0: fiducial path. If it cannot verify a CROP-sized image, fall
+        # through to the anchorless engine instead of returning the failure:
+        # a misrouted crop must never mask a recoverable watermark.
+        stage0 = _fiducial_decode(image, anchors, debug_dir)
+        if stage0.get("status") == "VERIFIED":
+            return stage0
+        h, w = image.shape[:2]
+        if h < 0.75 * TARGET_H or w < 0.75 * TARGET_W:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+            r1 = _anchorless_decode(gray)
+            if r1.get("status") == "VERIFIED":
+                return r1
+        return stage0
+
+    # STAGE 1: anchorless crop recovery (native image, no anchors required)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+    return _anchorless_decode(gray)
 
 # ---------------------------------------------------------------------------
 # CLI usage
