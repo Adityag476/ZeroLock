@@ -28,6 +28,8 @@ export default function Forensic() {
   const [leakText, setLeakText]     = useState('')
   const [textLoading, setTextLoading] = useState(false)
   const [textResult, setTextResult] = useState(null)
+  const [exams, setExams]           = useState([])
+  const [selectedExamId, setSelectedExamId] = useState('')
 
   useEffect(() => {
     if (!file) { setPreview(null); return }
@@ -85,7 +87,7 @@ export default function Forensic() {
     try {
       const res = await axios.post(`${API}/investigate/honey-token`, {
         leaked_text: leakText,
-        paper_id: 'EXAM-2026-MAIN',
+        paper_id: selectedExamId || 'EXAM-2026-MAIN',
         total_centres: 50,
       })
       setTextResult(res.data)
@@ -118,6 +120,16 @@ export default function Forensic() {
     }
   }
 
+  const loadExams = async () => {
+    try {
+      const res = await axios.get(`${API}/exams`)
+      setExams(res.data || [])
+      if (res.data && res.data.length > 0 && !selectedExamId) {
+        setSelectedExamId(res.data[0].id)
+      }
+    } catch {}
+  }
+
   const loadHistory = async () => {
     try {
       const res = await axios.get(`${API}/investigate/history`)
@@ -125,7 +137,7 @@ export default function Forensic() {
     } catch {}
   }
 
-  useEffect(() => { loadHistory() }, [])
+  useEffect(() => { loadHistory(); loadExams(); }, [])
 
   // Render gap distribution histogram
   const renderGapHistogram = () => {
@@ -471,6 +483,25 @@ export default function Forensic() {
                 When leakers retype questions into online channels, physical watermarks are lost.
                 ZeroLock embeds <strong>deterministic numerical distractor permutations</strong> per centre to mathematically attribute the leak source.
               </p>
+
+              {/* Active Exam Document Selector */}
+              {exams.length > 0 && (
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label className="form-label">Active Examination Document</label>
+                  <select
+                    className="form-input"
+                    value={selectedExamId}
+                    onChange={e => setSelectedExamId(e.target.value)}
+                    style={{ fontSize: 13, background: 'var(--bg-card)' }}
+                  >
+                    {exams.map(ex => (
+                      <option key={ex.id} value={ex.id}>
+                        {ex.name} ({ex.id.slice(0, 8)}...) — {ex.status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Sample loader buttons */}
               <div style={{ marginBottom: 16 }}>

@@ -49,10 +49,73 @@ def print_exam(
     print_num = (existing["cnt"] or 0) + 1
     ts = int(now)
 
-    # Generate watermarked PDF using actual uploaded exam questions
+    exam_secret = row["exam_secret"] if "exam_secret" in row.keys() else None
+    answer_key_text = row["answer_key_text"] if "answer_key_text" in row.keys() else None
+
+    # Generate centre-specific variant with keyed tracers (unique wording, question order, option permutations, canaries, and numbers)
+    from core.variant_engine import generate_centre_variant
+    variant = generate_centre_variant(
+        exam_id=exam_id,
+        centre_id=centre_id,
+        questions=questions,
+        answer_key_text=answer_key_text,
+        exam_secret=exam_secret,
+    )
+    centre_questions = variant["variant_questions"]
+
+    # Store variant metadata in centre_variants so Forensic Tracer can trace both text and photo leaks
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS centre_variants (
+                id          TEXT PRIMARY KEY,
+                exam_id     TEXT NOT NULL,
+                centre_id   INTEGER NOT NULL,
+                number_map  TEXT,
+                swap_vector TEXT,
+                option_perm TEXT,
+                q_order     TEXT,
+                canary_vector TEXT,
+                keyed       INTEGER,
+                variant_answer_key TEXT,
+                difficulty_index REAL,
+                batch_job_id TEXT
+            )
+        """)
+        existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(centre_variants)").fetchall()]
+        for col_name, col_type in [
+            ("option_perm", "TEXT"),
+            ("q_order", "TEXT"),
+            ("canary_vector", "TEXT"),
+            ("keyed", "INTEGER"),
+        ]:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE centre_variants ADD COLUMN {col_name} {col_type}")
+
+        conn.execute("""
+            INSERT OR REPLACE INTO centre_variants
+              (id, exam_id, centre_id, number_map, swap_vector,
+               option_perm, q_order, canary_vector, keyed,
+               variant_answer_key, difficulty_index, batch_job_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(uuid.uuid4()), exam_id, centre_id,
+            json.dumps(variant.get("number_map", {})),
+            json.dumps(variant.get("swap_vector", [])),
+            json.dumps(variant.get("option_perm", {})),
+            json.dumps(variant.get("q_order", [])),
+            json.dumps(variant.get("canary_vector", [])),
+            1 if variant.get("keyed") else 0,
+            variant.get("variant_answer_key"),
+            variant.get("difficulty_index", 1.0),
+            "custodian_jit",
+        ))
+    except Exception:
+        pass
+
+    # Generate watermarked PDF using centre-specific variant questions (carries distinct 15/9pt physical spacing for this centre)
     exam_title = row["name"]
     pdf_bytes = generate_watermarked_pdf(
-        questions=questions,
+        questions=centre_questions,
         centre_id=centre_id,
         hall_id=hall_id,
         print_num=print_num,

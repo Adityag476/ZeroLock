@@ -807,17 +807,20 @@ def kendall_tau_similarity(seq_a: list, seq_b: list) -> float:
 
 
 def _find_question_sequence_in_leak(questions: list[str], leaked_text: str) -> list[int]:
-    """Match leaked question order by longest distinctive substrings."""
-    leaked_lower = leaked_text.lower()
+    """Match leaked question order by longest distinctive substrings or word clusters."""
+    leaked_clean = re.sub(r'\s+', ' ', leaked_text)
+    leaked_lower = leaked_clean.lower()
     matches = []
     for q_idx, q in enumerate(questions):
-        words = [w.lower() for w in re.findall(r'\b[a-zA-Z]{4,}\b', q)]
+        prompt = re.split(r'\([A-D]\)|\b[A-D]\.', q)[0]
+        words = [w.lower() for w in re.findall(r'\b[a-zA-Z]{4,}\b', prompt)]
         content_words = [
             w for w in words
             if w not in {
                 "explain", "calculate", "describe", "define", "determine",
                 "state", "show", "using", "between", "which", "following",
-                "gives", "find", "obtain", "evaluate",
+                "gives", "find", "obtain", "evaluate", "what", "where", "when",
+                "with", "that", "this", "from", "were",
             }
         ]
         if not content_words:
@@ -834,10 +837,22 @@ def _find_question_sequence_in_leak(questions: list[str], leaked_text: str) -> l
             if found_pos != -1:
                 break
 
-        if found_pos == -1 and content_words:
-            hits = [leaked_lower.find(w) for w in content_words if leaked_lower.find(w) != -1]
-            if len(hits) >= max(2, len(content_words) // 4):
-                found_pos = min(hits)
+        if found_pos == -1 and len(content_words) >= 4:
+            all_hits = []
+            for w in content_words:
+                for m in re.finditer(r'\b' + re.escape(w) + r'\b', leaked_lower):
+                    all_hits.append(m.start())
+            if all_hits:
+                all_hits.sort()
+                best_cnt = 0
+                best_pos = -1
+                for h in all_hits:
+                    cnt = sum(1 for x in all_hits if h <= x <= h + 350)
+                    if cnt > best_cnt:
+                        best_cnt = cnt
+                        best_pos = h
+                if best_cnt >= max(3, len(content_words) // 3):
+                    found_pos = best_pos
 
         if found_pos != -1:
             matches.append((found_pos, q_idx))
@@ -848,10 +863,11 @@ def _find_question_sequence_in_leak(questions: list[str], leaked_text: str) -> l
 
 def _find_option_sequence_in_leak(mcq_options: list[str], leaked_text: str) -> list[int]:
     """Find relative order of MCQ options in leaked text."""
-    leaked_lower = leaked_text.lower()
+    leaked_clean = re.sub(r'\s+', ' ', leaked_text)
+    leaked_lower = leaked_clean.lower()
     matches = []
     for opt_idx, opt in enumerate(mcq_options):
-        opt_clean = opt.strip().lower()
+        opt_clean = re.sub(r'\s+', ' ', opt).strip().lower()
         if not opt_clean:
             continue
         sub = opt_clean[:min(25, len(opt_clean))]
@@ -880,24 +896,25 @@ def inspect_variant_text(
     Renormalizes over PRESENT signals only; if <2 signals present => INCONCLUSIVE.
     Tiered verdicts: margin >= +50% => LEAD, else INCONCLUSIVE.
     """
-    leaked_lower = leaked_text.lower()
+    leaked_clean = re.sub(r'\s+', ' ', leaked_text).strip()
+    leaked_lower = leaked_clean.lower()
 
     # Extract all numbers from leaked text
     leaked_numbers = set()
-    for m in re.finditer(r'\b(\d+(?:\.\d+)?)\b', leaked_text):
+    for m in re.finditer(r'\b(\d+(?:\.\d+)?)\b', leaked_clean):
         try:
             leaked_numbers.add(float(m.group(1)))
         except ValueError:
             pass
 
     # Extract question sequence and option sequences in leaked text
-    leaked_q_order = _find_question_sequence_in_leak(questions, leaked_text)
+    leaked_q_order = _find_question_sequence_in_leak(questions, leaked_clean)
 
     leaked_opt_orders = {}
     for q_idx, q in enumerate(questions):
         mcq_info = detect_mcq_options(q)
         if mcq_info:
-            opt_seq = _find_option_sequence_in_leak(mcq_info["options"], leaked_text)
+            opt_seq = _find_option_sequence_in_leak(mcq_info["options"], leaked_clean)
             if len(opt_seq) >= 2:
                 leaked_opt_orders[q_idx] = opt_seq
 

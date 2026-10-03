@@ -183,7 +183,7 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
 
     conn = get_conn()
     exam_row = None
-    if payload.paper_id:
+    if payload.paper_id and payload.paper_id != "EXAM-2026-MAIN":
         exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (payload.paper_id,)).fetchone()
     if not exam_row:
         exam_row = conn.execute("SELECT * FROM exams ORDER BY created_at DESC LIMIT 1").fetchone()
@@ -198,6 +198,7 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
             except Exception:
                 questions_to_use = []
 
+    actual_exam_id = exam_row["id"] if exam_row else (payload.paper_id or "EXAM-2026-MAIN")
     total_c = payload.total_centres or 50
     cids = list(range(1, total_c + 1))
     
@@ -206,7 +207,7 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
     # 1. Run variant inspector across all present signals
     var_res = inspect_variant_text(
         leaked_text=payload.leaked_text,
-        exam_id=payload.paper_id or "EXAM-2026-MAIN",
+        exam_id=actual_exam_id,
         questions=questions_to_use,
         centre_ids=cids,
         exam_secret=exam_secret,
@@ -315,6 +316,38 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
 @router.get("/honey-token/sample/{centre_id}")
 def get_honey_token_sample(centre_id: int):
     """Returns sample questions and simulated leak text for testing."""
+    conn = get_conn()
+    exam = conn.execute("SELECT * FROM exams ORDER BY created_at DESC LIMIT 1").fetchone()
+    conn.close()
+
+    if exam and exam["questions_json"]:
+        try:
+            questions = json.loads(exam["questions_json"])
+            secret = exam["exam_secret"] if "exam_secret" in exam.keys() else None
+            variant = generate_centre_variant(
+                exam_id=exam["id"],
+                centre_id=centre_id,
+                questions=questions,
+                answer_key_text=exam["answer_key_text"] if "answer_key_text" in exam.keys() else None,
+                exam_secret=secret,
+            )
+            v_qs = variant["variant_questions"]
+            sample_qs = v_qs[:min(4, len(v_qs))]
+            leak_body = "\n".join(f"Q{i+1}: {q}" for i, q in enumerate(sample_qs))
+            simulated_leak = (
+                f"[Intercepted Transmission — Channel #EXAM_LEAKS]\n"
+                f"{leak_body}\n"
+                f"Urgent answers needed ASAP!"
+            )
+            return {
+                "centre_id": centre_id,
+                "exam_id": exam["id"],
+                "questions": [{"id": f"q{i+1}", "text": q} for i, q in enumerate(sample_qs)],
+                "simulated_leak": simulated_leak,
+            }
+        except Exception:
+            pass
+
     questions = compile_center_paper(centre_id=centre_id)
     simulated_leak = (
         f"[Intercepted Transmission — Channel #NEET_LEAKS]\n"
