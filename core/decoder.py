@@ -137,15 +137,62 @@ def _find_corner_blobs(binary: np.ndarray) -> dict[str, tuple[float, float]]:
     return corners
 
 
+def _match_crosshair_template(binary: np.ndarray) -> Optional[np.ndarray]:
+    """
+    Template matching fallback for crosshairs in camera photos where
+    corner blobs might touch screen borders or bezels.
+    Uses a synthetic crosshair template in the 4 corner quadrants.
+    """
+    h, w = binary.shape
+    tpl_size = 29
+    tpl = np.zeros((tpl_size, tpl_size), dtype=np.uint8)
+    mid = tpl_size // 2
+    tpl[mid - 2 : mid + 3, :] = 255
+    tpl[:, mid - 2 : mid + 3] = 255
+
+    qw = int(w * ANCHOR_REGION_FRAC)
+    qh = int(h * ANCHOR_REGION_FRAC)
+    quadrants = [
+        ("TL", 0, 0, qw, qh),
+        ("TR", w - qw, 0, w, qh),
+        ("BL", 0, h - qh, qw, h),
+        ("BR", w - qw, h - qh, w, h),
+    ]
+    corners = {}
+    for name, x0, y0, x1, y1 in quadrants:
+        patch = binary[y0:y1, x0:x1]
+        if patch.shape[0] < tpl_size or patch.shape[1] < tpl_size:
+            return None
+        res = cv2.matchTemplate(patch, tpl, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        if max_val < 0.40:
+            return None
+        cx = x0 + max_loc[0] + mid
+        cy = y0 + max_loc[1] + mid
+        corners[name] = (float(cx), float(cy))
+
+    # Validate A4 aspect ratio (width / height ~ 0.50..0.85)
+    width = float(np.hypot(corners["TR"][0] - corners["TL"][0], corners["TR"][1] - corners["TL"][1]))
+    height = float(np.hypot(corners["BL"][0] - corners["TL"][0], corners["BL"][1] - corners["TL"][1]))
+    if height <= 0:
+        return None
+    aspect = width / height
+    if aspect < 0.50 or aspect > 0.85:
+        return None
+
+    return np.float32([corners["TL"], corners["TR"], corners["BL"], corners["BR"]])
+
+
 def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
     """
     Detect the 4 corner crosshair anchors.
     Falls back to affine parallelogram recovery (P4 = P1 + P3 - P2) if exactly 3 anchors found.
+    Falls back to template matching if contour search fails or aspect ratio is invalid.
     Returns 4×2 float32 array ordered [TL, TR, BL, BR], or None.
     """
     corners = _find_corner_blobs(binary)
     if len(corners) < 3:
-        return None
+        return _match_crosshair_template(binary)
 
     # Affine parallelogram recovery if 1 corner occluded (e.g., thumb / crop)
     if len(corners) == 3:
@@ -166,10 +213,10 @@ def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
     width = float(np.hypot(corners["TR"][0] - corners["TL"][0], corners["TR"][1] - corners["TL"][1]))
     height = float(np.hypot(corners["BL"][0] - corners["TL"][0], corners["BL"][1] - corners["TL"][1]))
     if height <= 0:
-        return None
+        return _match_crosshair_template(binary)
     aspect = width / height
     if aspect < 0.50 or aspect > 0.85:
-        return None
+        return _match_crosshair_template(binary)
 
     pts = np.float32([corners["TL"], corners["TR"], corners["BL"], corners["BR"]])
     return pts
@@ -200,6 +247,19 @@ def rectify(image: np.ndarray, anchors: np.ndarray) -> np.ndarray:
     return warped
 
 
+def _binarize_for_text(gray: np.ndarray) -> np.ndarray:
+    """
+    Binarize grayscale text image with binary inversion (ink = 255, background = 0).
+    Uses fixed 200 threshold for clean digital screenshots (mean luminance >= 220),
+    and Otsu adaptive thresholding for mobile camera photos/ambient illumination.
+    """
+    if float(np.mean(gray)) >= 220.0:
+        _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+    else:
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    return binary
+
+
 # ---------------------------------------------------------------------------
 # Step 4 — Line segmentation
 # ---------------------------------------------------------------------------
@@ -209,7 +269,7 @@ def segment_lines(gray_canonical: np.ndarray) -> list[tuple[int, int]]:
     Find text-line vertical extents via horizontal projection profile.
     Returns list of (y_start, y_end) pairs in the question body region.
     """
-    _, binary = cv2.threshold(gray_canonical, 200, 255, cv2.THRESH_BINARY_INV)
+    binary = _binarize_for_text(gray_canonical)
     proj = np.sum(binary, axis=1) // 255
 
     # Skip header region (exam title, metadata, dividing rule) and bottom footer
@@ -249,7 +309,7 @@ def extract_gaps_from_line(
     Filters out intra-word letter gaps (< MIN_GAP_PX) and line-end/margin noise (> MAX_GAP_PX).
     """
     row = gray[y0:y1, :]
-    _, binary = cv2.threshold(row, 200, 255, cv2.THRESH_BINARY_INV)
+    binary = _binarize_for_text(row)
     proj = np.sum(binary, axis=0) // 255
 
     line_h = max(1, y1 - y0)
@@ -526,7 +586,7 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
     # Step 1a: Preprocess & tilt correction (deskewing up to +/-20 degrees)
     deskewed_gray, est_angle = _deskew_image(gray)
 
-    _, crop_binary = cv2.threshold(deskewed_gray, 200, 255, cv2.THRESH_BINARY_INV)
+    crop_binary = _binarize_for_text(deskewed_gray)
     proj = np.sum(crop_binary, axis=1) // 255
 
     # Text-line detection via horizontal projection in native image
