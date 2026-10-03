@@ -3,7 +3,7 @@ ZeroLeak — POST /api/exams
 Create and register a new exam paper (encrypt + IPFS + on-chain stub).
 """
 
-import os, sys, time, uuid, hashlib
+import os, sys, time, uuid, hashlib, secrets
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
@@ -69,6 +69,7 @@ async def create_exam(
 
     exam_id = str(uuid.uuid4())
     created_at = time.time()
+    exam_secret = secrets.token_bytes(32).hex()
 
     # Encrypt
     enc = encrypt_pdf(pdf_bytes)
@@ -82,12 +83,12 @@ async def create_exam(
     conn.execute("""
         INSERT INTO exams
           (id, name, created_at, release_time, status, ipfs_cid, sha256_plain,
-           nonce_b64, ciphertext_b64, key_hex, questions_json)
-        VALUES (?, ?, ?, ?, 'SEALED', ?, ?, ?, ?, ?, ?)
+           nonce_b64, ciphertext_b64, key_hex, questions_json, exam_secret)
+        VALUES (?, ?, ?, ?, 'SEALED', ?, ?, ?, ?, ?, ?, ?)
     """, (
         exam_id, exam_title, created_at, release_time, ipfs_cid,
         enc["sha256_plain"], enc["nonce_b64"], enc["ciphertext_b64"], enc["key_hex"],
-        questions_json,
+        questions_json, exam_secret,
     ))
 
     # Store Shamir shares (one per centre slot — centres 1–5)

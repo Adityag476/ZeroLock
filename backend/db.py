@@ -33,7 +33,8 @@ def init_db() -> None:
             key_hex         TEXT,
             unlock_time_unix REAL,
             on_chain_paper_id TEXT,
-            questions_json  TEXT
+            questions_json  TEXT,
+            exam_secret     TEXT
         );
 
         CREATE TABLE IF NOT EXISTS shamir_shares (
@@ -105,6 +106,8 @@ def init_db() -> None:
     exam_cols = [c[1] for c in conn.execute("PRAGMA table_info(exams)").fetchall()]
     if "questions_json" not in exam_cols:
         conn.execute("ALTER TABLE exams ADD COLUMN questions_json TEXT")
+    if "exam_secret" not in exam_cols:
+        conn.execute("ALTER TABLE exams ADD COLUMN exam_secret TEXT")
 
     conn.commit()
     conn.close()
