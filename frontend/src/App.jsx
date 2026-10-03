@@ -50,11 +50,11 @@ const Icons = {
 }
 
 const NAV = [
-  { path: '/setter',   label: 'Paper Vault',        Icon: Icons.Lock,     section: 'CUSTODY OPERATIONS' },
-  { path: '/batch',    label: 'Centre Generation',  Icon: Icons.Building, section: null },
-  { path: '/centre',   label: 'Centre Custodian',   Icon: Icons.Building, section: null },
-  { path: '/forensic', label: 'Forensic Tracer',    Icon: Icons.Radar,    section: 'INTELLIGENCE' },
-  { path: '/audit',    label: 'Ledger Audit Chain', Icon: Icons.Ledger,   section: null },
+  { path: '/setter',   label: 'Setter Portal (Paper Vault)', Icon: Icons.Lock,     section: 'CUSTODY OPERATIONS' },
+  { path: '/batch',    label: 'Batch Operations',            Icon: Icons.Building, section: null },
+  { path: '/centre',   label: 'Centre Custodian',            Icon: Icons.Building, section: null },
+  { path: '/forensic', label: 'Forensic Tracer',             Icon: Icons.Radar,    section: 'INTELLIGENCE' },
+  { path: '/audit',    label: 'Ledger Audit Chain',          Icon: Icons.Ledger,   section: null },
 ]
 
 export default function App() {
