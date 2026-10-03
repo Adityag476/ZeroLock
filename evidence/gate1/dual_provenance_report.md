@@ -1,6 +1,6 @@
 # Dual-Provenance Physical Isolation Benchmark
 
-**Execution Timestamp:** 2026-09-18 06:42:28  
+**Execution Timestamp:** 2026-10-02 21:41:40  
 **Core Proof:** Two visually identical exam papers generated from the same master question set are deterministically separated and attributed to their independent custody lineages.
 
 ## Provenance Separation Results
