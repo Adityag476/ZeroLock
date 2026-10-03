@@ -280,9 +280,10 @@ def _run_batch_job(job_id: str, exam_id: str, centre_ids: list[int],
     conn.close()
 
     exam_title = (exam_row["name"] if exam_row and "name" in exam_row.keys() else "") or "Examination Paper"
+    exam_secret = (exam_row["exam_secret"] if exam_row and "exam_secret" in exam_row.keys() else None) or None
 
     # Generate variants if needed
-    min_slots = 4
+    min_slots = 6
     variant_data = {}
     questions_to_use = []
     if exam_row:
@@ -295,17 +296,16 @@ def _run_batch_job(job_id: str, exam_id: str, centre_ids: list[int],
 
     for cid in centre_ids:
         variant = generate_centre_variant(
-            exam_id, cid, questions_to_use, answer_key_text
+            exam_id, cid, questions_to_use, answer_key_text, exam_secret=exam_secret
         )
         variant_data[cid] = variant
 
-    # Check minimum slot count
+    # Check minimum slot count across all signals
     has_enough_slots = all(v["slot_count"] >= min_slots for v in variant_data.values())
     if not has_enough_slots and not answer_key_text:
-        # Wording-only with < 4 slots: flag but continue (non-blocking)
         with _jobs_lock:
             job["warnings"].append(
-                "Paper too rigid for textual variants — numeric key upload recommended for stronger fingerprinting"
+                "Paper too rigid for textual tracers — numeric key upload required"
             )
 
     total = len(centre_ids)
@@ -435,6 +435,10 @@ def _run_batch_job(job_id: str, exam_id: str, centre_ids: list[int],
             # Store variant metadata
             centre_result["number_map"] = variant_data[cid]["number_map"]
             centre_result["swap_vector"] = variant_data[cid]["swap_vector"]
+            centre_result["option_perm"] = variant_data[cid].get("option_perm", {})
+            centre_result["q_order"] = variant_data[cid].get("q_order", [])
+            centre_result["canary_vector"] = variant_data[cid].get("canary_vector", [])
+            centre_result["keyed"] = variant_data[cid].get("keyed", False)
 
         except Exception as e:
             centre_result["pdf_status"] = "ERROR"
@@ -457,22 +461,42 @@ def _run_batch_job(job_id: str, exam_id: str, centre_ids: list[int],
                 centre_id   INTEGER NOT NULL,
                 number_map  TEXT,
                 swap_vector TEXT,
+                option_perm TEXT,
+                q_order     TEXT,
+                canary_vector TEXT,
+                keyed       INTEGER,
                 variant_answer_key TEXT,
                 difficulty_index REAL,
                 batch_job_id TEXT
             )
         """)
+        # Safe migration for any missing columns
+        existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(centre_variants)").fetchall()]
+        for col_name, col_type in [
+            ("option_perm", "TEXT"),
+            ("q_order", "TEXT"),
+            ("canary_vector", "TEXT"),
+            ("keyed", "INTEGER"),
+        ]:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE centre_variants ADD COLUMN {col_name} {col_type}")
+
         for cid in centre_ids:
             v = variant_data[cid]
             conn.execute("""
                 INSERT OR REPLACE INTO centre_variants
                   (id, exam_id, centre_id, number_map, swap_vector,
+                   option_perm, q_order, canary_vector, keyed,
                    variant_answer_key, difficulty_index, batch_job_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 str(uuid.uuid4()), exam_id, cid,
                 json.dumps(v["number_map"]),
                 json.dumps(v["swap_vector"]),
+                json.dumps(v.get("option_perm", {})),
+                json.dumps(v.get("q_order", [])),
+                json.dumps(v.get("canary_vector", [])),
+                1 if v.get("keyed") else 0,
                 v.get("variant_answer_key"),
                 v["difficulty_index"],
                 job_id,
@@ -682,17 +706,21 @@ def batch_answer_keys(job_id: str):
 
     conn = get_conn()
     rows = conn.execute(
-        "SELECT centre_id, number_map, variant_answer_key, difficulty_index "
-        "FROM centre_variants WHERE batch_job_id = ? ORDER BY centre_id",
+        "SELECT * FROM centre_variants WHERE batch_job_id = ? ORDER BY centre_id",
         (job_id,),
     ).fetchall()
     conn.close()
 
     keys = []
     for row in rows:
+        row_keys = row.keys() if hasattr(row, "keys") else []
         keys.append({
             "centre_id": row["centre_id"],
             "number_map": json.loads(row["number_map"]) if row["number_map"] else {},
+            "option_perm": json.loads(row["option_perm"]) if "option_perm" in row_keys and row["option_perm"] else {},
+            "q_order": json.loads(row["q_order"]) if "q_order" in row_keys and row["q_order"] else [],
+            "canary_vector": json.loads(row["canary_vector"]) if "canary_vector" in row_keys and row["canary_vector"] else [],
+            "keyed": bool(row["keyed"]) if "keyed" in row_keys else False,
             "variant_answer_key": row["variant_answer_key"],
             "difficulty_index": row["difficulty_index"],
         })
@@ -723,6 +751,8 @@ def inspect_variant(
     exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (exam_id,)).fetchone()
     conn.close()
 
+    exam_secret = (exam_row["exam_secret"] if exam_row and "exam_secret" in exam_row.keys() else None) or None
+
     questions_to_use = []
     if exam_row:
         q_raw = exam_row["questions_json"] if "questions_json" in exam_row.keys() else None
@@ -738,6 +768,7 @@ def inspect_variant(
         questions=questions_to_use,
         centre_ids=cids,
         answer_key_text=answer_key_text,
+        exam_secret=exam_secret,
     )
 
     return result
