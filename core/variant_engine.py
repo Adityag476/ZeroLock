@@ -776,8 +776,91 @@ def generate_centre_variant(
 
 
 # ---------------------------------------------------------------------------
-# Text fingerprint inspector — attribute leaked text to a centre
+# Multi-signal comparator with Kendall scoring & tiered verdicts
 # ---------------------------------------------------------------------------
+
+def kendall_tau_similarity(seq_a: list, seq_b: list) -> float:
+    """
+    Kendall tau rank correlation similarity in [0.0, 1.0].
+    seq_a and seq_b are sequences of items.
+    Returns 1.0 for concordant order, 0.0 for reversed order, 0.5 for independent.
+    Local ~15-line implementation; strictly no scipy.
+    """
+    common = [x for x in seq_a if x in seq_b]
+    n = len(common)
+    if n < 2:
+        return 1.0 if n == 1 else 0.0
+    idx_b = {x: i for i, x in enumerate(seq_b)}
+    concordant = 0
+    discordant = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if idx_b[common[i]] < idx_b[common[j]]:
+                concordant += 1
+            else:
+                discordant += 1
+    total_pairs = concordant + discordant
+    if total_pairs == 0:
+        return 0.0
+    tau = (concordant - discordant) / total_pairs
+    return (tau + 1.0) / 2.0
+
+
+def _find_question_sequence_in_leak(questions: list[str], leaked_text: str) -> list[int]:
+    """Match leaked question order by longest distinctive substrings."""
+    leaked_lower = leaked_text.lower()
+    matches = []
+    for q_idx, q in enumerate(questions):
+        words = [w.lower() for w in re.findall(r'\b[a-zA-Z]{4,}\b', q)]
+        content_words = [
+            w for w in words
+            if w not in {
+                "explain", "calculate", "describe", "define", "determine",
+                "state", "show", "using", "between", "which", "following",
+                "gives", "find", "obtain", "evaluate",
+            }
+        ]
+        if not content_words:
+            content_words = words
+
+        found_pos = -1
+        for n in (4, 3, 2):
+            for i in range(len(content_words) - n + 1):
+                phrase = " ".join(content_words[i:i+n])
+                pos = leaked_lower.find(phrase)
+                if pos != -1:
+                    found_pos = pos
+                    break
+            if found_pos != -1:
+                break
+
+        if found_pos == -1 and content_words:
+            hits = [leaked_lower.find(w) for w in content_words if leaked_lower.find(w) != -1]
+            if len(hits) >= max(2, len(content_words) // 4):
+                found_pos = min(hits)
+
+        if found_pos != -1:
+            matches.append((found_pos, q_idx))
+
+    matches.sort(key=lambda x: x[0])
+    return [q_idx for _, q_idx in matches]
+
+
+def _find_option_sequence_in_leak(mcq_options: list[str], leaked_text: str) -> list[int]:
+    """Find relative order of MCQ options in leaked text."""
+    leaked_lower = leaked_text.lower()
+    matches = []
+    for opt_idx, opt in enumerate(mcq_options):
+        opt_clean = opt.strip().lower()
+        if not opt_clean:
+            continue
+        sub = opt_clean[:min(25, len(opt_clean))]
+        pos = leaked_lower.find(sub)
+        if pos != -1:
+            matches.append((pos, opt_idx))
+    matches.sort(key=lambda x: x[0])
+    return [opt_idx for _, opt_idx in matches]
+
 
 def inspect_variant_text(
     leaked_text: str,
@@ -788,16 +871,18 @@ def inspect_variant_text(
     exam_secret: Optional[str] = None,
 ) -> dict:
     """
-    Score leaked text against all centre variants to find the source.
-    Uses both number-profile match and swap-vector match with positional
-    confirmation (replacement present AND original absent = strong signal).
-
-    Returns:
-        dict with status, implicated_centre_id, confidence, separation_margin
+    Score leaked text against every issued centre across all present signals:
+      - Numbers: set-overlap F1 between leaked numbers and centre's perturbed set (0.30)
+      - Option order: Kendall-tau similarity between leaked option order and stored perm (0.25)
+      - Canaries: entity present-AND-original-absent confirmation (0.20)
+      - Wording swaps: positional confirmation (0.15)
+      - Q-order: rank correlation between leaked question sequence and stored q_order (0.10)
+    Renormalizes over PRESENT signals only; if <2 signals present => INCONCLUSIVE.
+    Tiered verdicts: margin >= +50% => LEAD, else INCONCLUSIVE.
     """
     leaked_lower = leaked_text.lower()
 
-    # Extract numbers from leaked text
+    # Extract all numbers from leaked text
     leaked_numbers = set()
     for m in re.finditer(r'\b(\d+(?:\.\d+)?)\b', leaked_text):
         try:
@@ -805,120 +890,241 @@ def inspect_variant_text(
         except ValueError:
             pass
 
-    centre_scores = {}
+    # Extract question sequence and option sequences in leaked text
+    leaked_q_order = _find_question_sequence_in_leak(questions, leaked_text)
 
+    leaked_opt_orders = {}
+    for q_idx, q in enumerate(questions):
+        mcq_info = detect_mcq_options(q)
+        if mcq_info:
+            opt_seq = _find_option_sequence_in_leak(mcq_info["options"], leaked_text)
+            if len(opt_seq) >= 2:
+                leaked_opt_orders[q_idx] = opt_seq
+
+    # Pre-generate variants for all centres
+    centre_variants = {}
     for cid in centre_ids:
-        variant = generate_centre_variant(exam_id, cid, questions, answer_key_text, exam_secret=exam_secret)
+        centre_variants[cid] = generate_centre_variant(
+            exam_id, cid, questions, answer_key_text, exam_secret=exam_secret
+        )
 
-        # Score 1: Swap-vector match with positional confirmation
-        # Strong signal: replacement IS in leaked text AND original is NOT
-        # Weak signal: replacement IS in leaked text (original might also be)
-        # Negative signal: replacement is NOT in leaked text but original IS
-        swap_strong = 0
-        swap_weak = 0
-        swap_miss = 0
-        swap_total = max(1, len(variant["swap_vector"]))
+    # Detect present signals
+    has_numbers = bool(
+        answer_key_text
+        and any(v["number_map"] for v in centre_variants.values())
+        and leaked_numbers
+    )
+    has_options = bool(leaked_opt_orders)
+    has_canaries = any(v.get("canary_vector") for v in centre_variants.values())
+    has_swaps = any(v.get("swap_vector") for v in centre_variants.values())
+    has_q_order = len(leaked_q_order) >= 2 and len(questions) >= 2
 
-        for swap in variant["swap_vector"]:
-            replacement_lower = swap["replacement"].lower()
-            original_lower = swap["original"].lower()
+    # Verify if canaries or swaps actually have presence in leak
+    if has_canaries:
+        canary_found = False
+        for v in centre_variants.values():
+            for c in v.get("canary_vector", []):
+                if c["replacement"].lower() in leaked_lower or c["original"].lower() in leaked_lower:
+                    canary_found = True
+                    break
+            if canary_found:
+                break
+        has_canaries = canary_found
 
-            rep_found = replacement_lower in leaked_lower
-            orig_found = original_lower in leaked_lower
+    if has_swaps:
+        swap_found = False
+        for v in centre_variants.values():
+            for s in v.get("swap_vector", []):
+                if s["replacement"].lower() in leaked_lower or s["original"].lower() in leaked_lower:
+                    swap_found = True
+                    break
+            if swap_found:
+                break
+        has_swaps = swap_found
 
-            if rep_found and not orig_found:
-                swap_strong += 1  # Strong confirmation
-            elif rep_found and orig_found:
-                swap_weak += 1    # Ambiguous (both present)
-            elif not rep_found and orig_found:
-                swap_miss += 1    # Counter-evidence
+    # Fixed weights
+    WEIGHT_MAP = {
+        "numbers": 0.30,
+        "option_order": 0.25,
+        "canaries": 0.20,
+        "swaps": 0.15,
+        "q_order": 0.10,
+    }
 
-        swap_score = (swap_strong * 1.0 + swap_weak * 0.3) / swap_total
+    present_signals = []
+    if has_numbers:
+        present_signals.append("numbers")
+    if has_options:
+        present_signals.append("option_order")
+    if has_canaries:
+        present_signals.append("canaries")
+    if has_swaps:
+        present_signals.append("swaps")
+    if has_q_order:
+        present_signals.append("q_order")
 
-        # Score 2: Number-profile match with exclusivity check
-        num_match = 0
-        num_miss = 0
-        num_total = max(1, len(variant["number_map"]))
-
-        for orig_str, pert_str in variant["number_map"].items():
-            try:
-                pert_val = float(pert_str)
-                orig_val = float(orig_str)
-                pert_found = pert_val in leaked_numbers
-                orig_found = orig_val in leaked_numbers
-
-                if pert_found and not orig_found:
-                    num_match += 1.0    # Strong: perturbed present, original absent
-                elif pert_found:
-                    num_match += 0.5    # Weak: both present
-                elif orig_found:
-                    num_miss += 1       # Counter: original present, perturbed absent
-            except ValueError:
-                pass
-
-        num_score = num_match / num_total
-
-        # Combined score
-        if variant["number_map"]:
-            combined = swap_score * 0.4 + num_score * 0.6
-        else:
-            combined = swap_score
-
-        # Penalty for misses (counter-evidence)
-        penalty = (swap_miss + num_miss) * 0.05
-        combined = max(0.0, combined - penalty)
-
-        centre_scores[cid] = {
-            "swap_strong": swap_strong,
-            "swap_weak": swap_weak,
-            "swap_miss": swap_miss,
-            "swap_total": swap_total,
-            "num_match": num_match,
-            "num_miss": num_miss,
-            "num_total": num_total,
-            "combined": combined,
+    # If <2 signals present => INCONCLUSIVE
+    if len(present_signals) < 2:
+        return {
+            "status": "INCONCLUSIVE",
+            "implicated_centre_id": None,
+            "confidence": 0.0,
+            "separation_margin": 0.0,
+            "message": "No conclusive textual match — no attribution made.",
+            "subline": "",
+            "signals": {k: 0.0 for k in WEIGHT_MAP},
+            "present_signals": present_signals,
+            "swap_matches": 0,
+            "number_matches": 0.0,
         }
 
-    # Rank centres
-    ranked = sorted(centre_scores.items(), key=lambda x: x[1]["combined"], reverse=True)
+    total_weight = sum(WEIGHT_MAP[s] for s in present_signals)
+
+    # Score each centre
+    centre_evals = {}
+
+    for cid in centre_ids:
+        variant = centre_variants[cid]
+        scores = {}
+
+        # 1. Numbers F1 score
+        num_match = 0
+        swap_strong = 0
+        if has_numbers:
+            p_nums = {float(v) for v in variant["number_map"].values()}
+            o_nums = {float(k) for k in variant["number_map"].keys()}
+            i_p = p_nums & leaked_numbers
+            i_o = o_nums & leaked_numbers
+            rec = len(i_p) / len(p_nums) if p_nums else 0.0
+            total_cand = len(i_p | i_o)
+            prec = len(i_p) / total_cand if total_cand > 0 else 0.0
+            f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+            scores["numbers"] = f1
+            num_match = len(i_p)
+
+        # 2. Option order Kendall-tau
+        if has_options:
+            taus = []
+            for q_idx, l_opts in leaked_opt_orders.items():
+                stored_perm = variant.get("option_perm", {}).get(q_idx, [])
+                if stored_perm:
+                    tau = kendall_tau_similarity(l_opts, stored_perm)
+                    taus.append(tau)
+            scores["option_order"] = (sum(taus) / len(taus)) if taus else 0.0
+
+        # 3. Canaries
+        if has_canaries:
+            c_vec = variant.get("canary_vector", [])
+            c_strong = 0
+            c_weak = 0
+            c_miss = 0
+            for c in c_vec:
+                rep_in = c["replacement"].lower() in leaked_lower
+                orig_in = c["original"].lower() in leaked_lower
+                if rep_in and not orig_in:
+                    c_strong += 1
+                elif rep_in and orig_in:
+                    c_weak += 1
+                elif not rep_in and orig_in:
+                    c_miss += 1
+            c_score = max(0.0, (c_strong * 1.0 + c_weak * 0.3 - c_miss * 0.2) / max(1, len(c_vec)))
+            scores["canaries"] = c_score
+
+        # 4. Swaps
+        if has_swaps:
+            s_vec = variant.get("swap_vector", [])
+            s_strong = 0
+            s_weak = 0
+            s_miss = 0
+            for s in s_vec:
+                rep_in = s["replacement"].lower() in leaked_lower
+                orig_in = s["original"].lower() in leaked_lower
+                if rep_in and not orig_in:
+                    s_strong += 1
+                elif rep_in and orig_in:
+                    s_weak += 1
+                elif not rep_in and orig_in:
+                    s_miss += 1
+            s_score = max(0.0, (s_strong * 1.0 + s_weak * 0.3 - s_miss * 0.1) / max(1, len(s_vec)))
+            scores["swaps"] = s_score
+            swap_strong = s_strong
+
+        # 5. Q-order
+        if has_q_order:
+            stored_q_order = variant.get("q_order", [])
+            scores["q_order"] = kendall_tau_similarity(leaked_q_order, stored_q_order)
+
+        # Composite score normalized over present signals
+        composite = sum(WEIGHT_MAP[s] * scores.get(s, 0.0) for s in present_signals) / total_weight
+
+        centre_evals[cid] = {
+            "composite": composite,
+            "scores": scores,
+            "swap_strong": swap_strong,
+            "num_match": num_match,
+            "variant": variant,
+        }
+
+    # Rank centres by composite score
+    ranked = sorted(centre_evals.items(), key=lambda x: x[1]["composite"], reverse=True)
     if not ranked:
         return {
             "status": "INCONCLUSIVE",
             "implicated_centre_id": None,
             "confidence": 0.0,
             "separation_margin": 0.0,
-            "message": "No centres to evaluate",
+            "message": "No conclusive textual match — no attribution made.",
+            "subline": "",
         }
 
     top_cid, top_data = ranked[0]
-    runner_cid, runner_data = ranked[1] if len(ranked) > 1 else (None, {"combined": 0.0})
+    runner_cid, runner_data = ranked[1] if len(ranked) > 1 else (None, {"composite": 0.0})
 
-    confidence = min(100.0, top_data["combined"] * 100)
-
-    # Separation margin: percentage points above runner-up
-    if runner_data["combined"] > 0:
-        separation = ((top_data["combined"] - runner_data["combined"]) / runner_data["combined"]) * 100
+    if runner_data["composite"] > 0:
+        separation = ((top_data["composite"] - runner_data["composite"]) / runner_data["composite"]) * 100.0
     else:
-        separation = 100.0 if top_data["combined"] > 0 else 0.0
+        separation = 100.0 if top_data["composite"] > 0 else 0.0
 
-    is_conclusive = top_data["combined"] > 0.2 and separation > 10.0
+    confidence = min(100.0, top_data["composite"] * 100.0)
+
+    # Tiered verdict: margin >= +50% and composite >= 0.20 => LEAD
+    is_conclusive = top_data["composite"] >= 0.20 and separation >= 50.0
+
+    if is_conclusive:
+        status = "LEAD"
+        message = f"INVESTIGATIVE LEAD (not proof): Centre #{top_cid} · margin +{round(separation, 1)}%"
+        subline = "Corroborate with unlock timing, print custodian, and access logs before action."
+    else:
+        status = "INCONCLUSIVE"
+        message = "No conclusive textual match — no attribution made."
+        subline = ""
 
     return {
-        "status": "VERIFIED" if is_conclusive else "INCONCLUSIVE",
+        "status": status,
         "implicated_centre_id": top_cid if is_conclusive else None,
         "confidence": round(confidence, 1),
         "separation_margin": round(separation, 1),
-        "swap_matches": top_data["swap_strong"],
-        "number_matches": round(top_data.get("num_match", 0), 1),
         "runner_up_centre_id": runner_cid,
-        "runner_up_score": round(runner_data["combined"] * 100, 1),
-        "message": (
-            f"ATTRIBUTION: Centre #{top_cid} · confidence {round(confidence, 1)}% · "
-            f"separation margin +{round(separation, 1)}%"
-            if is_conclusive
-            else "INCONCLUSIVE: Insufficient variant signal in provided text"
-        ),
+        "runner_up_score": round(runner_data["composite"] * 100.0, 1),
+        "signals": {
+            s: round(top_data["scores"].get(s, 0.0), 3)
+            for s in ("numbers", "option_order", "canaries", "swaps", "q_order")
+        },
+        "present_signals": present_signals,
+        "swap_matches": top_data["swap_strong"],
+        "number_matches": top_data["num_match"],
+        "message": message,
+        "subline": subline,
+        "ranked_centres": [
+            {
+                "centre_id": cid,
+                "composite_score": round(d["composite"] * 100.0, 1),
+                "signals": {s: round(d["scores"].get(s, 0.0), 3) for s in present_signals},
+            }
+            for cid, d in ranked[:5]
+        ],
     }
+
 
 
 # ---------------------------------------------------------------------------
