@@ -535,31 +535,51 @@ export default function Forensic() {
                 {/* Result Verdict Card */}
                 <div className="verdict-card" style={{ marginBottom: 20 }}>
                   <div style={{ display: 'inline-flex', marginBottom: 12 }}>
-                    <span className={`badge ${textResult.status === 'VERIFIED' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '6px 14px', fontSize: 12 }}>
-                      {textResult.status === 'VERIFIED' ? 'Origin Correlated' : 'Inconclusive Signature'}
-                    </span>
+                    {textResult.status === 'LEAD' ? (
+                      <span className="badge badge-warning" style={{ padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
+                        INVESTIGATIVE LEAD (not proof): Centre #{textResult.implicated_centre_id} · margin +{textResult.separation_margin}%
+                      </span>
+                    ) : textResult.status === 'VERIFIED' ? (
+                      <span className="badge badge-success" style={{ padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
+                        VERIFIED: Centre #{textResult.implicated_centre_id}
+                      </span>
+                    ) : (
+                      <span className="badge" style={{ padding: '6px 14px', fontSize: 12, background: 'var(--border)', color: 'var(--text-secondary)' }}>
+                        INCONCLUSIVE
+                      </span>
+                    )}
                   </div>
 
-                  <div className="verdict-title" style={{ color: textResult.status === 'VERIFIED' ? 'var(--text-primary)' : 'var(--warning-text)' }}>
-                    {textResult.status === 'VERIFIED' ? `Centre #${textResult.implicated_centre_id} Implicated` : 'No Unique Signature Match'}
+                  <div className="verdict-title" style={{ color: textResult.status === 'LEAD' || textResult.status === 'VERIFIED' ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: 18 }}>
+                    {textResult.status === 'LEAD'
+                      ? `INVESTIGATIVE LEAD (not proof): Centre #${textResult.implicated_centre_id} · margin +${textResult.separation_margin}%`
+                      : textResult.status === 'VERIFIED'
+                      ? `Centre #${textResult.implicated_centre_id} Verified`
+                      : 'No conclusive textual match — no attribution made.'}
                   </div>
 
-                  {textResult.status === 'VERIFIED' && (
-                    <div className="verdict-meta-row">
+                  {textResult.subline && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: 'var(--warning-text)', fontWeight: 500, lineHeight: 1.5 }}>
+                      {textResult.subline}
+                    </div>
+                  )}
+
+                  {(textResult.status === 'LEAD' || textResult.status === 'VERIFIED') && (
+                    <div className="verdict-meta-row" style={{ marginTop: 14 }}>
                       <div className="verdict-meta-item">
-                        <div className="verdict-meta-label">Culprit Centre</div>
+                        <div className="verdict-meta-label">Candidate Centre</div>
                         <div className="verdict-meta-value" style={{ color: 'var(--accent)' }}>
                           #{textResult.implicated_centre_id}
                         </div>
                       </div>
                       <div className="verdict-meta-item">
-                        <div className="verdict-meta-label">Matched Tokens</div>
-                        <div className="verdict-meta-value">
-                          {textResult.tokens_matched_count} Values
+                        <div className="verdict-meta-label">Separation Margin</div>
+                        <div className="verdict-meta-value" style={{ color: 'var(--success-text)' }}>
+                          +{textResult.separation_margin}%
                         </div>
                       </div>
                       <div className="verdict-meta-item">
-                        <div className="verdict-meta-label">Confidence</div>
+                        <div className="verdict-meta-label">Composite Score</div>
                         <div className="verdict-meta-value">
                           {textResult.confidence}%
                         </div>
@@ -567,27 +587,27 @@ export default function Forensic() {
                     </div>
                   )}
 
-                  <div style={{ marginTop: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
+                  <div style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-secondary)' }}>
                     {textResult.message}
                   </div>
                 </div>
 
                 {/* Statistical Margin & Runner-Up */}
-                {textResult.status === 'VERIFIED' && (
+                {(textResult.status === 'LEAD' || textResult.status === 'VERIFIED') && (
                   <div className="card" style={{ marginBottom: 20 }}>
                     <h3 style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                      Statistical Separation Margin
+                      Statistical Candidate Ranking
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                            Centre #{textResult.implicated_centre_id} (Top Candidate)
+                            Centre #{textResult.implicated_centre_id} (Lead Candidate)
                           </span>
                           <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{textResult.confidence}%</span>
                         </div>
                         <div className="confidence-bar-track">
-                          <div className="confidence-bar-fill" style={{ width: `${textResult.confidence}%`, background: 'var(--accent)' }} />
+                          <div className="confidence-bar-fill" style={{ width: `${Math.min(100, textResult.confidence)}%`, background: 'var(--accent)' }} />
                         </div>
                       </div>
 
@@ -595,12 +615,12 @@ export default function Forensic() {
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                             <span style={{ color: 'var(--text-secondary)' }}>
-                              Centre #{textResult.runner_up_centre_id} (Runner-Up Signature)
+                              Centre #{textResult.runner_up_centre_id} (Runner-Up)
                             </span>
                             <span style={{ color: 'var(--text-secondary)' }}>{textResult.runner_up_confidence}%</span>
                           </div>
                           <div className="confidence-bar-track">
-                            <div className="confidence-bar-fill" style={{ width: `${textResult.runner_up_confidence}%`, background: '#d2d2d7' }} />
+                            <div className="confidence-bar-fill" style={{ width: `${Math.min(100, textResult.runner_up_confidence)}%`, background: '#d2d2d7' }} />
                           </div>
                         </div>
                       )}
@@ -615,45 +635,76 @@ export default function Forensic() {
                         textAlign: 'center',
                         fontWeight: 600,
                       }}>
-                        Attribution Separation: +{(textResult.confidence - textResult.runner_up_confidence).toFixed(1)}% Distinctness Margin
+                        Attribution Separation Margin: +{textResult.separation_margin}% vs Runner-Up
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Token Match Breakdown */}
-                {textResult.tokens_matched && textResult.tokens_matched.length > 0 && (
-                  <div className="card">
+                {/* Per-Signal Breakdown Bars */}
+                {textResult.signals && (
+                  <div className="card" style={{ marginBottom: 20 }}>
                     <h3 style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                      Correlated Distractor Parameters
+                      Semantic Tracer Signal Breakdown
                     </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {textResult.tokens_matched.map((tok, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '8px 12px',
-                            background: '#fafafc',
-                            borderRadius: 'var(--radius-sm)',
-                            border: '1px solid var(--border)',
-                          }}
-                        >
-                          <div>
-                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', marginRight: 8 }}>
-                              {tok.question_id}
-                            </span>
-                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                              {tok.topic}
-                            </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[
+                        { key: 'numbers', label: 'Numerical Perturbation (F1 Match)', weight: '30%' },
+                        { key: 'option_order', label: 'MCQ Option Order (Kendall Tau)', weight: '25%' },
+                        { key: 'canaries', label: 'Named-Entity Canaries (Trap Streets)', weight: '20%' },
+                        { key: 'swaps', label: 'Wording Swaps (Positional)', weight: '15%' },
+                        { key: 'q_order', label: 'Question Order Sequence (Rank Corr)', weight: '10%' },
+                      ].map(sig => {
+                        const val = Math.round((textResult.signals[sig.key] || 0) * 100);
+                        const isPresent = textResult.present_signals && textResult.present_signals.includes(sig.key);
+                        return (
+                          <div key={sig.key}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: isPresent ? 'var(--text-primary)' : 'var(--text-tertiary)', fontWeight: isPresent ? 500 : 400 }}>
+                                {sig.label} <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>({sig.weight})</span>
+                              </span>
+                              <span style={{ fontWeight: 600, color: isPresent ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                                {isPresent ? `${val}%` : 'Absent'}
+                              </span>
+                            </div>
+                            <div className="confidence-bar-track">
+                              <div
+                                className="confidence-bar-fill"
+                                style={{
+                                  width: isPresent ? `${Math.max(2, val)}%` : '0%',
+                                  background: val > 60 ? 'var(--accent)' : val > 30 ? 'var(--warning-text)' : 'var(--border)',
+                                }}
+                              />
+                            </div>
                           </div>
-                          <span className="badge badge-accent mono">
-                            {tok.parameter} = {tok.value}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Corroboration Checklist Display */}
+                {textResult.status === 'LEAD' && (
+                  <div className="card" style={{ marginBottom: 20 }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                      Custody Corroboration Protocol
+                    </h3>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Institutional mandate: verify the following evidence sources before administrative action:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>1.</span>
+                        <span>Correlate unlock timing with leak timestamp</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>2.</span>
+                        <span>Verify physical print custodian signatures at Centre #{textResult.implicated_centre_id}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>
+                        <span style={{ color: 'var(--accent)', fontWeight: 700 }}>3.</span>
+                        <span>Audit printing station access logs and tamper-evident custody seals</span>
+                      </div>
                     </div>
                   </div>
                 )}

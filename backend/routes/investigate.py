@@ -27,7 +27,7 @@ class HoneyTokenRequest(BaseModel):
 
 class HoneyTokenResult(BaseModel):
     investigation_id:     str
-    status:               str   # VERIFIED | INCONCLUSIVE | INVALID
+    status:               str   # LEAD | INCONCLUSIVE | VERIFIED | INVALID
     message:              str
     implicated_centre_id: Optional[int] = None
     confidence:           float
@@ -37,6 +37,10 @@ class HoneyTokenResult(BaseModel):
     runner_up_centre_id:  Optional[int] = None
     runner_up_confidence: float = 0.0
     numbers_detected:     list[float] = []
+    subline:              Optional[str] = None
+    signals:              Optional[dict] = None
+    present_signals:      Optional[list[str]] = None
+    ranked_centres:       Optional[list[dict]] = None
 
 
 class InvestigationResult(BaseModel):
@@ -197,12 +201,15 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
     total_c = payload.total_centres or 50
     cids = list(range(1, total_c + 1))
     
-    # 1. Run variant inspector across both channels (wording swaps + number profile)
+    exam_secret = (exam_row["exam_secret"] if exam_row and "exam_secret" in exam_row.keys() else None) or None
+
+    # 1. Run variant inspector across all present signals
     var_res = inspect_variant_text(
         leaked_text=payload.leaked_text,
         exam_id=payload.paper_id or "EXAM-2026-MAIN",
         questions=questions_to_use,
         centre_ids=cids,
+        exam_secret=exam_secret,
     )
 
     # 2. Run legacy numerical template inspector
@@ -212,42 +219,59 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
         total_registered_centres=total_c,
     )
 
-    # Determine best verdict across both channels
-    if var_res.get("status") == "VERIFIED" and (
-        legacy_res.get("status") != "VERIFIED" or var_res.get("confidence", 0) >= legacy_res.get("confidence", 0)
-    ):
-        status = "VERIFIED"
-        cid = var_res.get("implicated_centre_id")
+    sep = float(var_res.get("separation_margin", 0.0))
+    top_cid = var_res.get("implicated_centre_id")
+    is_lead = (
+        var_res.get("status") in ("LEAD", "VERIFIED")
+        and sep >= 50.0
+        and top_cid is not None
+        and top_cid in cids
+    )
+
+    if is_lead:
+        status = "LEAD"
+        cid = top_cid
         conf = float(var_res.get("confidence", 0.0))
-        sep = float(var_res.get("separation_margin", 0.0))
-        msg = f"ATTRIBUTION: Centre #{cid} · confidence {conf}% · separation margin +{sep}%"
+        msg = f"INVESTIGATIVE LEAD (not proof): Centre #{cid} · margin +{round(sep, 1)}%"
+        subline = "Corroborate with unlock timing, print custodian, and access logs before action."
         runner_cid = var_res.get("runner_up_centre_id")
         runner_conf = float(var_res.get("runner_up_score", 0.0))
         tokens_count = int(var_res.get("swap_matches", 0) + var_res.get("number_matches", 0))
         tokens = []
         numbers_found = []
-    elif legacy_res.get("status") == "VERIFIED":
-        status = "VERIFIED"
+        signals = var_res.get("signals", {})
+        present_signals = var_res.get("present_signals", [])
+        ranked_centres = var_res.get("ranked_centres", [])
+    elif legacy_res.get("status") == "VERIFIED" and legacy_res.get("implicated_centre_id") in cids:
+        status = "LEAD"
         cid = legacy_res.get("implicated_centre_id")
         conf = float(legacy_res.get("confidence", 0.0))
         runner_conf = float(legacy_res.get("runner_up_confidence", 0.0))
         sep = max(0.0, round(conf - runner_conf, 1))
-        msg = f"ATTRIBUTION: Centre #{cid} · confidence {conf}% · separation margin +{sep}%"
+        msg = f"INVESTIGATIVE LEAD (not proof): Centre #{cid} · margin +{round(sep, 1)}%"
+        subline = "Corroborate with unlock timing, print custodian, and access logs before action."
         runner_cid = legacy_res.get("runner_up_centre_id")
         tokens_count = int(legacy_res.get("tokens_matched_count", 0))
         tokens = legacy_res.get("tokens_matched", [])
         numbers_found = legacy_res.get("numbers_detected", [])
+        signals = {}
+        present_signals = []
+        ranked_centres = []
     else:
         status = "INCONCLUSIVE"
         cid = None
         conf = 0.0
         sep = 0.0
-        msg = "INCONCLUSIVE: Insufficient variant signal in provided text"
+        msg = "No conclusive textual match — no attribution made."
+        subline = ""
         runner_cid = None
         runner_conf = 0.0
         tokens_count = 0
         tokens = []
         numbers_found = legacy_res.get("numbers_detected", [])
+        signals = var_res.get("signals", {})
+        present_signals = var_res.get("present_signals", [])
+        ranked_centres = var_res.get("ranked_centres", [])
 
     inv_id = str(uuid.uuid4())
     now = time.time()
@@ -281,6 +305,10 @@ async def investigate_honey_token(payload: HoneyTokenRequest):
         runner_up_centre_id=runner_cid,
         runner_up_confidence=runner_conf,
         numbers_detected=numbers_found,
+        subline=subline,
+        signals=signals,
+        present_signals=present_signals,
+        ranked_centres=ranked_centres,
     )
 
 
