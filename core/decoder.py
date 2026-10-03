@@ -6,14 +6,14 @@ of a ZeroLeak-watermarked printed exam page.
 
 Pipeline:
   1. Grayscale + adaptive threshold
-  2. Detect 4 corner crosshair anchors via contour matching
+  2. Detect 4 corner crosshair anchors via contour matching (or 3-anchor parallelogram recovery)
   3. Homography → warpPerspective to canonical A4 plane (595×842 pt @ 150 DPI)
   4. Horizontal projection → text-line segmentation
   5. Per-line: connected components → word bounding boxes → inter-word gap widths
   6. Gap threshold → bitstream
-  7. Sliding magic-bit correlator + Reed-Solomon decode → payload
+  7. Sliding magic-bit correlator + Reed-Solomon / compact decode → payload
 
-Returns one of three outcomes (ChatGPT's design):
+Returns one of three outcomes:
     VERIFIED   — valid decode + DB match
     CORRUPTED  — partial signal, RS fails
     UNKNOWN    — no ZeroLeak watermark detected
@@ -58,6 +58,7 @@ THRESHOLD_PX = (WIDE_GAP + NARROW_GAP) / 2 * PT_TO_PX
 
 # Intra-word kerning is ~6-10 px; inter-word gaps are ≥ 18.75 px
 MIN_GAP_PX   = 14   # pixels (ignore intra-word letter gaps)
+MAX_GAP_PX   = 70.0 # pixels (ignore trailing margin / scrollbar / line end gaps)
 
 # Corner search bounds
 ANCHOR_REGION_FRAC = 0.18
@@ -245,6 +246,7 @@ def extract_gaps_from_line(
 ) -> list[float]:
     """
     Extract inter-word gap widths (in pixels) from a single text line.
+    Filters out intra-word letter gaps (< MIN_GAP_PX) and line-end/margin noise (> MAX_GAP_PX).
     """
     row = gray[y0:y1, :]
     _, binary = cv2.threshold(row, 200, 255, cv2.THRESH_BINARY_INV)
@@ -261,7 +263,7 @@ def extract_gaps_from_line(
         if val >= min_ink and not in_word:
             if word_end > 0:
                 gap_w = x - word_end
-                if gap_w >= MIN_GAP_PX:
+                if MIN_GAP_PX <= gap_w <= MAX_GAP_PX:
                     gaps.append(float(gap_w))
             in_word = True
         elif val < min_ink and in_word:
@@ -269,7 +271,6 @@ def extract_gaps_from_line(
             word_end = x
 
     return gaps
-
 
 
 # ---------------------------------------------------------------------------
@@ -438,7 +439,6 @@ def _fiducial_decode(image: np.ndarray, anchors: np.ndarray, debug_dir: Optional
     """Stage 0: fiducial anchor path (>=3 anchors). Returns its own outcome dict."""
     warped_full = rectify(image, anchors)
     canonical = cv2.cvtColor(warped_full, cv2.COLOR_BGR2GRAY) if len(warped_full.shape) == 3 else warped_full
-    anchor_found = True
     if debug_dir:
         cv2.imwrite(os.path.join(debug_dir, "2_warped.png"), warped_full)
 
@@ -654,8 +654,6 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
 
     top_cand, top_score, margin = _match_compact_candidates(bits, candidates)
 
-    # Step 1g: Result: status VERIFIED, mode="anchorless-crop", centre/hall/print,
-    # confidence = consistency (or RS margin); else UNKNOWN. Never a guess.
     if top_score >= 0.85:
         return {
             "status": "VERIFIED",
@@ -691,7 +689,7 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
     }
 
 
-
+# ---------------------------------------------------------------------------
 # Full pipeline
 # ---------------------------------------------------------------------------
 
@@ -746,9 +744,60 @@ def decode_photo(
                 return r1
         return stage0
 
-    # STAGE 1: anchorless crop recovery (native image, no anchors required)
+    # STAGE 1: No anchors detected
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
-    return _anchorless_decode(gray)
+    h, w = image.shape[:2]
+    is_crop = (h < 0.75 * TARGET_H or w < 0.75 * TARGET_W)
+
+    # If it is an anchorless crop, prioritize the anchorless crop engine
+    if is_crop:
+        r_crop = _anchorless_decode(gray)
+        if r_crop.get("status") == "VERIFIED":
+            return r_crop
+
+    # Canonical A4 Resize Fallback (for full-page photos/screenshots or when crop engine needs canonical fallback)
+    canonical = cv2.resize(gray, (TARGET_W, TARGET_H))
+    lines = segment_lines(canonical)
+    if lines:
+        all_gaps = []
+        for (y0, y1) in lines:
+            all_gaps.extend(extract_gaps_from_line(canonical, y0, y1))
+        if len(all_gaps) >= 40:
+            bits = gaps_to_bits(all_gaps)
+            res = sliding_decode(bits)
+            if res and res.get("valid"):
+                cid = res["centre_id"]
+                hid = res["hall_id"]
+                pnum = res["print_num"]
+                confidence = min(1.0, len(bits) / 200)
+                p25 = float(np.percentile(all_gaps, 25)) if all_gaps else 0.0
+                p75 = float(np.percentile(all_gaps, 75)) if all_gaps else 0.0
+                th = THRESHOLD_PX if (p75 - p25 < 3.0) else (p25 + p75) / 2.0
+                mode_str = "fiducial" if not is_crop else "anchorless-crop"
+                return {
+                    "status": "VERIFIED",
+                    "centre_id": cid,
+                    "hall_id": hid,
+                    "print_num": pnum,
+                    "timestamp": res.get("timestamp", 0),
+                    "confidence": round(confidence, 3),
+                    "bit_count": len(bits),
+                    "gap_count": len(all_gaps),
+                    "bit_offset": res.get("bit_offset", 0),
+                    "anchor_found": False,
+                    "threshold": round(float(th), 1),
+                    "gap_sample": [round(float(g), 1) for g in all_gaps[:64]],
+                    "mode": mode_str,
+                    "message": (
+                        f"LEAK TRACED ({'Fiducial Fallback' if not is_crop else 'Anchorless Crop'}) — "
+                        f"Centre {cid} · Hall {hid} · Print #{pnum} · "
+                        f"Epoch {res.get('timestamp', 0)}"
+                    ),
+                }
+
+    if not is_crop:
+        return _anchorless_decode(gray)
+    return r_crop
 
 # ---------------------------------------------------------------------------
 # CLI usage
