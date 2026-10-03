@@ -137,7 +137,7 @@ def _find_corner_blobs(binary: np.ndarray) -> dict[str, tuple[float, float]]:
     return corners
 
 
-def _match_crosshair_template(binary: np.ndarray) -> Optional[np.ndarray]:
+def _match_crosshair_template(binary: np.ndarray, gray: Optional[np.ndarray] = None) -> Optional[np.ndarray]:
     """
     Template matching fallback for crosshairs in camera photos where
     corner blobs might touch screen borders or bezels.
@@ -162,16 +162,43 @@ def _match_crosshair_template(binary: np.ndarray) -> Optional[np.ndarray]:
     for name, x0, y0, x1, y1 in quadrants:
         patch = binary[y0:y1, x0:x1]
         if patch.shape[0] < tpl_size or patch.shape[1] < tpl_size:
-            return None
+            continue
         res = cv2.matchTemplate(patch, tpl, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
         if max_val < 0.40:
-            return None
-        cx = x0 + max_loc[0] + mid
-        cy = y0 + max_loc[1] + mid
+            continue
+        cx = int(x0 + max_loc[0] + mid)
+        cy = int(y0 + max_loc[1] + mid)
+
+        # In ambient photos, verify crosshair sits on paper (not on dark monitor bezel/desk)
+        if gray is not None and float(np.mean(gray)) < 220.0:
+            p = gray[max(0, cy - 20) : min(h, cy + 20), max(0, cx - 20) : min(w, cx + 20)]
+            if p.size > 0:
+                periph = (np.mean(p[:8, :8]) + np.mean(p[:8, -8:]) + np.mean(p[-8:, :8]) + np.mean(p[-8:, -8:])) / 4.0
+                if periph < 65.0:
+                    continue  # False match in dark bezel / shadow
+
         corners[name] = (float(cx), float(cy))
 
-    # Validate A4 aspect ratio (width / height ~ 0.50..0.85)
+    if len(corners) < 3:
+        return None
+
+    # Parallelogram recovery if 1 corner occluded (e.g., thumb / crop)
+    if len(corners) == 3:
+        if "TL" not in corners:
+            tr, bl, br = np.array(corners["TR"]), np.array(corners["BL"]), np.array(corners["BR"])
+            corners["TL"] = tuple(tr + bl - br)
+        elif "TR" not in corners:
+            tl, bl, br = np.array(corners["TL"]), np.array(corners["BL"]), np.array(corners["BR"])
+            corners["TR"] = tuple(tl + br - bl)
+        elif "BL" not in corners:
+            tl, tr, br = np.array(corners["TL"]), np.array(corners["TR"]), np.array(corners["BR"])
+            corners["BL"] = tuple(tl + br - tr)
+        elif "BR" not in corners:
+            tl, tr, bl = np.array(corners["TL"]), np.array(corners["TR"]), np.array(corners["BL"])
+            corners["BR"] = tuple(tr + bl - tl)
+
+    # Validate that quadrilateral matches portrait A4 proportions (width / height ~ 0.5..0.85)
     width = float(np.hypot(corners["TR"][0] - corners["TL"][0], corners["TR"][1] - corners["TL"][1]))
     height = float(np.hypot(corners["BL"][0] - corners["TL"][0], corners["BL"][1] - corners["TL"][1]))
     if height <= 0:
@@ -183,7 +210,7 @@ def _match_crosshair_template(binary: np.ndarray) -> Optional[np.ndarray]:
     return np.float32([corners["TL"], corners["TR"], corners["BL"], corners["BR"]])
 
 
-def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
+def detect_anchors(binary: np.ndarray, gray: Optional[np.ndarray] = None) -> Optional[np.ndarray]:
     """
     Detect the 4 corner crosshair anchors.
     Falls back to affine parallelogram recovery (P4 = P1 + P3 - P2) if exactly 3 anchors found.
@@ -192,7 +219,7 @@ def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
     """
     corners = _find_corner_blobs(binary)
     if len(corners) < 3:
-        return _match_crosshair_template(binary)
+        return _match_crosshair_template(binary, gray=gray)
 
     # Affine parallelogram recovery if 1 corner occluded (e.g., thumb / crop)
     if len(corners) == 3:
@@ -213,10 +240,10 @@ def detect_anchors(binary: np.ndarray) -> Optional[np.ndarray]:
     width = float(np.hypot(corners["TR"][0] - corners["TL"][0], corners["TR"][1] - corners["TL"][1]))
     height = float(np.hypot(corners["BL"][0] - corners["TL"][0], corners["BL"][1] - corners["TL"][1]))
     if height <= 0:
-        return _match_crosshair_template(binary)
+        return _match_crosshair_template(binary, gray=gray)
     aspect = width / height
     if aspect < 0.50 or aspect > 0.85:
-        return _match_crosshair_template(binary)
+        return _match_crosshair_template(binary, gray=gray)
 
     pts = np.float32([corners["TL"], corners["TR"], corners["BL"], corners["BR"]])
     return pts
@@ -487,7 +514,7 @@ def _match_compact_candidates(
                 best_score = sc
         scores[(c, h, p)] = best_score
 
-    sorted_cands = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    sorted_cands = sorted(scores.items(), key=lambda x: (round(x[1], 4), 1 if x[0][0] < 1000 else 0), reverse=True)
     top_cand, top_score = sorted_cands[0]
     runner_up_score = sorted_cands[1][1] if len(sorted_cands) > 1 else 0.5
     margin = top_score - runner_up_score
@@ -583,17 +610,30 @@ def _fiducial_decode(image: np.ndarray, anchors: np.ndarray, debug_dir: Optional
 
 def _anchorless_decode(gray: np.ndarray) -> dict:
     """Stage 1: anchorless crop recovery on a native grayscale image."""
-    # Step 1a: Preprocess & tilt correction (deskewing up to +/-20 degrees)
+    is_phone = float(np.mean(gray)) < 220.0
     deskewed_gray, est_angle = _deskew_image(gray)
 
-    crop_binary = _binarize_for_text(deskewed_gray)
-    proj = np.sum(crop_binary, axis=1) // 255
+    if not is_phone:
+        crop_binary = _binarize_for_text(deskewed_gray)
+        proj = np.sum(crop_binary, axis=1) // 255
+        eval_gray = deskewed_gray
+        line_threshold = 12
+    else:
+        # Background normalization for phone camera photos (handles vignetting & lighting gradients)
+        bg = cv2.GaussianBlur(deskewed_gray, (51, 51), 0)
+        norm = cv2.divide(deskewed_gray, bg, scale=255)
+        _, crop_binary = cv2.threshold(norm, 240, 255, cv2.THRESH_BINARY_INV)
+        crop_binary[deskewed_gray < 75] = 0
+        proj = np.sum(crop_binary, axis=1) // 255
+        noise_floor = np.percentile(proj, 20)
+        proj = np.maximum(0, proj - noise_floor)
+        eval_gray = norm
+        line_threshold = 15
 
     # Text-line detection via horizontal projection in native image
     lines = []
     in_line = False
     start = 0
-    line_threshold = 12
     for y in range(len(proj)):
         val = proj[y]
         if val >= line_threshold and not in_line:
@@ -619,7 +659,7 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
     # Step 1b: Per-line word-gap extraction
     all_gaps = []
     for (y0, y1) in lines:
-        gaps = extract_gaps_from_line(deskewed_gray, y0, y1)
+        gaps = extract_gaps_from_line(eval_gray, y0, y1)
         all_gaps.extend(gaps)
 
     # Step 1c: Guard: < 40 gaps
@@ -714,7 +754,8 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
 
     top_cand, top_score, margin = _match_compact_candidates(bits, candidates)
 
-    if top_score >= 0.85:
+    min_score = 0.80 if is_phone else 0.85
+    if top_score >= min_score:
         return {
             "status": "VERIFIED",
             "mode": "anchorless-crop",
@@ -739,7 +780,7 @@ def _anchorless_decode(gray: np.ndarray) -> dict:
     return {
         "status": "UNKNOWN",
         "mode": "anchorless-crop",
-        "message": f"Candidate match consistency {round(top_score*100, 1)}% < 85% — attribution unresolved",
+        "message": f"Candidate match consistency {round(top_score*100, 1)}% < {int(min_score*100)}% — attribution unresolved",
         "confidence": 0.0,
         "bit_count": len(bits),
         "gap_count": len(all_gaps),
@@ -783,12 +824,16 @@ def decode_photo(
     if image is None:
         return {"status": "UNKNOWN", "message": "Cannot read image file", "confidence": 0.0}
 
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
     binary = preprocess(image)
     if debug_dir:
         cv2.imwrite(os.path.join(debug_dir, "1_binary.png"), binary)
 
     # Anchor detection
-    anchors = detect_anchors(binary)
+    try:
+        anchors = detect_anchors(binary, gray=gray)
+    except TypeError:
+        anchors = detect_anchors(binary)
     if anchors is not None:
         # STAGE 0: fiducial path. If it cannot verify a CROP-sized image, fall
         # through to the anchorless engine instead of returning the failure:
